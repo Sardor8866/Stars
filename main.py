@@ -19,30 +19,9 @@ WEBHOOK_PATH = f"/webhook/{TOKEN}"
 PORT = 8080
 
 # НАСТРОЙКИ АДМИНА (МОЖНО МЕНЯТЬ)
-MIN_WITHDRAWAL = 1  # Минимальная сумма вывода в USDT (ИЗМЕНЕНО НА 1)
-REFERRAL_REWARD = 0.1  # Награда за реферала в USDT (ИЗМЕНЕНО НА 0.1)
-REFERRAL_WELCOME_BONUS = 0  # Приветственный бонус реферала в USDT (ИЗМЕНЕНО НА 0)
-CURRENCY = "USDT"  # Валюта
-
-# Инициализация бота
-bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
-
-# Инициализация Flask приложения
-app = Flask(__name__)
-
-# Инициализация канала для уведомлений
-withdrawal_channel = WithdrawalChannel(TOKEN)
-
-# ========== НАСТРОЙКИ ==========
-TOKEN = "8337396229:AAES7rHlibutnscXOHk7t6XB2fK2CUni5eE"
-WEBHOOK_URL = "https://stars-prok.onrender.com"  # ⚠️ ЗАМЕНИ на свой URL!
-WEBHOOK_PATH = f"/webhook/{TOKEN}"
-PORT = 8080
-
-# НАСТРОЙКИ АДМИНА (МОЖНО МЕНЯТЬ)
-MIN_WITHDRAWAL = 1  # Минимальная сумма вывода в USDT (ИЗМЕНЕНО НА 1)
-REFERRAL_REWARD = 0.1  # Награда за реферала в USDT (ИЗМЕНЕНО НА 0.1)
-REFERRAL_WELCOME_BONUS = 0  # Приветственный бонус реферала в USDT (ИЗМЕНЕНО НА 0)
+MIN_WITHDRAWAL = 1  # Минимальная сумма вывода в USDT
+REFERRAL_REWARD = 0.1  # Награда за реферала в USDT
+REFERRAL_WELCOME_BONUS = 0  # Приветственный бонус реферала в USDT
 CURRENCY = "USDT"  # Валюта
 
 # Инициализация бота
@@ -561,6 +540,21 @@ def update_setting(name, value):
     conn.close()
 
 # ========== ОБНОВЛЕННЫЕ ФУНКЦИИ ПОЛЬЗОВАТЕЛЯ ==========
+def get_user_total_withdrawn(user_id):
+    """Получение общей суммы выведенных средств пользователя"""
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT SUM(amount) FROM withdrawals 
+        WHERE user_id = ? AND status = 'approved'
+    ''', (user_id,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    return result[0] if result and result[0] else 0
+
 def register_user(user_id, username, full_name, referrer_id=None):
     """Регистрация пользователя с проверкой дублирования реферальных начислений"""
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
@@ -1242,7 +1236,7 @@ def process_mailing_all(message):
 def manage_channels_command(message):
     """Управление каналами и ссылками"""
     channels_text = """═══════════════════════════
-📺 <b>УПРАВЛЕНИЕ КАНАЛАМИ И ССЫЛКАМИ</b> 📺
+📺 <b>УПРАВЛЕНИЕ КАНАЛЫМИ И ССЫЛКАМИ</b> 📺
 ═══════════════════════════
 
 <blockquote><b>Для пользователей все показывается в одном списке.</b></blockquote>
@@ -2834,8 +2828,11 @@ def profile_command(message):
             return
 
     user_info = get_user_info(message.from_user.id)
-
+    
     if user_info:
+        # Получаем реальную сумму выведенных средств
+        total_withdrawn = get_user_total_withdrawn(message.from_user.id)
+        
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
         referral_link = generate_referral_link(message.from_user.id)
         username_display = f"@{user_info['username']}" if user_info['username'] else "не указан"
@@ -2848,7 +2845,7 @@ def profile_command(message):
 [ ] Ваш баланс: {format_usdt(user_info['balance'])}</blockquote>
 
 <b>💰 ВЫВОД:</b>
-<blockquote>Выведено: 4 {CURRENCY}</blockquote>
+<blockquote>Выведено: {format_usdt(total_withdrawn)}</blockquote>
 
 <b>📊 РЕФЕРАЛЬНАЯ СТАТИСТИКА:</b>
 <blockquote>Число приглашённых рефералов: {user_info['referrals_count']}
@@ -3433,8 +3430,11 @@ def stats_command(message):
 
     user_info = get_user_info(message.from_user.id)
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-
+    
     if user_info:
+        # Получаем реальные данные о выводах
+        total_withdrawn = get_user_total_withdrawn(message.from_user.id)
+        
         referrals_count = user_info['referrals_count']
         earned_from_refs = referrals_count * referral_reward
         min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
@@ -3445,8 +3445,8 @@ def stats_command(message):
 
 <b>💰 ФИНАНСОВАЯ ИНФОРМАЦИЯ:</b>
 <blockquote>Ваш баланс: {format_usdt(user_info['balance'])}
-Заработано с рефералов: {format_usdt(earned_from_refs)}
-Всего заработано: {format_usdt(user_info['balance'] + earned_from_refs)}</blockquote>
+Выведено: {format_usdt(total_withdrawn)}
+Заработано с рефералов: {format_usdt(earned_from_refs)}</blockquote>
 
 <b>👥 РЕФЕРАЛЬНАЯ СТАТИСТИКА:</b>
 <blockquote>Приглашено друзей: {referrals_count}
