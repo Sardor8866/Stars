@@ -1,5 +1,3 @@
-[file name]: channel.py
-[file content begin]
 import telebot
 from telebot import types
 from datetime import datetime
@@ -91,4 +89,3 @@ class WithdrawalChannel:
             
         except Exception as e:
             print(f"❌ Ошибка при обновлении статуса в канале: {e}")
-[file content end]
