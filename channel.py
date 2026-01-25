@@ -1,139 +1,94 @@
+[file name]: channel.py
+[file content begin]
 import telebot
 from telebot import types
 from datetime import datetime
 
 class WithdrawalChannel:
-    def __init__(self, bot_token, channel_id=None):
-        self.bot = telebot.TeleBot(bot_token)
-        self.channel_id = channel_id
-    
+    def __init__(self, token):
+        self.bot = telebot.TeleBot(token)
+        self.channel_id = None
+        
     def set_channel(self, channel_id):
-        """Установка канала для уведомлений"""
+        """Установка ID канала"""
         self.channel_id = channel_id
-        return True
-    
+        
     def send_withdrawal_notification(self, withdrawal_data):
-        """
-        Отправка уведомления о новом выводе в канал
-        
-        withdrawal_data: словарь с данными о выводе
-        {
-            'withdrawal_id': int,
-            'user_id': int,
-            'username': str,
-            'amount': int,
-            'created_at': str
-        }
-        """
-        if not self.channel_id:
-            print("❌ Канал для уведомлений не установлен")
-            return None
-        
+        """Отправка уведомления о новой заявке в канал"""
         try:
-            # Создаем сообщение для канала
-            message_text = self._create_withdrawal_message(withdrawal_data)
+            if not self.channel_id:
+                print("❌ ID канала не установлен")
+                return None
+                
+            text = f"""═══════════════════════════
+💰 <b>НОВАЯ ЗАЯВКА НА ВЫВОД</b> 💰
+═══════════════════════════
+
+<b>📋 ИНФОРМАЦИЯ О ЗАЯВКЕ:</b>
+<blockquote>🆔 Номер: <b>#{withdrawal_data['withdrawal_id']}</b>
+👤 Пользователь: <b>{withdrawal_data['username']}</b>
+👤 ID: <b>{withdrawal_data['user_id']}</b>
+💰 Сумма: <b>{withdrawal_data['amount']} USDT</b>
+📅 Дата: <b>{withdrawal_data['created_at']}</b></blockquote>
+
+<b>⏳ СТАТУС:</b> <b>ОЖИДАЕТ ПОДТВЕРЖДЕНИЯ</b> ⏳"""
+
+            keyboard = types.InlineKeyboardMarkup(row_width=2)
+            keyboard.add(
+                types.InlineKeyboardButton(
+                    "✅ Одобрить",
+                    callback_data=f"channel_approve_{withdrawal_data['withdrawal_id']}"
+                ),
+                types.InlineKeyboardButton(
+                    "❌ Отклонить",
+                    callback_data=f"channel_reject_{withdrawal_data['withdrawal_id']}"
+                )
+            )
             
-            # Создаем клавиатуру с кнопками для обработки
-            keyboard = self._create_withdrawal_keyboard(withdrawal_data['withdrawal_id'])
-            
-            # Отправляем сообщение в канал
-            sent_message = self.bot.send_message(
+            message = self.bot.send_message(
                 self.channel_id,
-                message_text,
+                text,
                 parse_mode='HTML',
                 reply_markup=keyboard
             )
             
-            # Сохраняем ID сообщения для будущего обновления
-            return sent_message.message_id
+            return message.message_id
             
         except Exception as e:
             print(f"❌ Ошибка при отправке уведомления в канал: {e}")
             return None
-    
-    def _create_withdrawal_message(self, data):
-        """Создание текста сообщения о выводе"""
-        created_time = datetime.now().strftime('%H:%M')
-        
-        message = f'''
-<b>🆕 НОВАЯ ЗАЯВКА #{data['withdrawal_id']}</b>
-
-👤 <b>Пользователь:</b> @{data['username']}
-🆔 <b>ID:</b> <code>{data['user_id']}</code>
-
-💰 <b>Сумма:</b> <b>{data['amount']} ⭐</b>
-
-⏰ <b>Время:</b> {created_time}
-🔄 <b>Статус:</b> ⏳ <b>ОЖИДАЕТ</b>
-'''
-        return message
-    
-    def _create_withdrawal_keyboard(self, withdrawal_id):
-        """Создание клавиатуры для управления выводом"""
-        keyboard = types.InlineKeyboardMarkup(row_width=2)
-        
-        keyboard.add(
-            types.InlineKeyboardButton(
-                "✅ Одобрить",
-                callback_data=f"channel_approve_{withdrawal_id}"
-            ),
-            types.InlineKeyboardButton(
-                "❌ Отклонить",
-                callback_data=f"channel_reject_{withdrawal_id}"
-            )
-        )
-        
-        return keyboard
-    
-    def update_withdrawal_status(self, message_id, withdrawal_data, status, admin_message=None):
-        """
-        Обновление сообщения в канале после обработки вывода
-        
-        status: 'approved' или 'rejected'
-        """
-        if not self.channel_id:
-            return False
-        
-        try:
-            # Создаем обновленное сообщение
-            message_text = self._create_updated_message(withdrawal_data, status, admin_message)
             
-            # Отправляем обновленное сообщение
+    def update_withdrawal_status(self, message_id, withdrawal_data, status, admin_message=None):
+        """Обновление статуса заявки в канале"""
+        try:
+            if not self.channel_id:
+                print("❌ ID канала не установлен")
+                return
+                
+            status_text = "✅ ОДОБРЕНО" if status == 'approved' else "❌ ОТКЛОНЕНО"
+            status_emoji = "✅" if status == 'approved' else "❌"
+            
+            text = f"""═══════════════════════════
+{status_emoji} <b>ЗАЯВКА ОБРАБОТАНА</b> {status_emoji}
+═══════════════════════════
+
+<b>📋 ИНФОРМАЦИЯ О ЗАЯВКЕ:</b>
+<blockquote>🆔 Номер: <b>#{withdrawal_data['withdrawal_id']}</b>
+👤 Пользователь: <b>{withdrawal_data['username']}</b>
+👤 ID: <b>{withdrawal_data['user_id']}</b>
+💰 Сумма: <b>{withdrawal_data['amount']} USDT</b>
+📅 Дата создания: <b>{withdrawal_data['created_at']}</b>
+{status_emoji} Статус: <b>{status_text}</b>
+📅 Дата обработки: <b>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</b></blockquote>
+{f'<b>💬 СООБЩЕНИЕ:</b>\n<blockquote>{admin_message}</blockquote>' if admin_message else ''}"""
+            
             self.bot.edit_message_text(
-                message_text,
+                text,
                 self.channel_id,
                 message_id,
                 parse_mode='HTML'
             )
             
-            return True
-            
         except Exception as e:
-            print(f"❌ Ошибка при обновлении сообщения в канале: {e}")
-            return False
-    
-    def _create_updated_message(self, data, status, admin_message=None):
-        """Создание обновленного сообщения после обработки"""
-        status_emoji = "✅" if status == 'approved' else "❌"
-        status_text = "ОДОБРЕНО" if status == 'approved' else "ОТКЛОНЕНО"
-        
-        processed_time = datetime.now().strftime('%H:%M')
-        
-        message = f'''
-<b>📋 ЗАЯВКА #{data['withdrawal_id']} ОБРАБОТАНА</b>
-
-👤 <b>Пользователь:</b> @{data['username']}
-🆔 <b>ID:</b> <code>{data['user_id']}</code>
-
-💰 <b>Сумма:</b> <b>{data['amount']} ⭐</b>
-
-⏰ <b>Время создания:</b> {data['created_at']}
-⏱️ <b>Время обработки:</b> {processed_time}
-
-🔄 <b>Статус:</b> {status_emoji} <b>{status_text}</b>
-'''
-
-        if admin_message:
-            message += f'\n💬 <b>Сообщение:</b> {admin_message}\n'
-        
-        return message
+            print(f"❌ Ошибка при обновлении статуса в канале: {e}")
+[file content end]
