@@ -13,8 +13,8 @@ from flask import Flask, request, jsonify
 from channel import WithdrawalChannel  # Импортируем модуль канала
 
 # ========== НАСТРОЙКИ ==========
-TOKEN = "8096884868:AAGUq_yAyi24lWs_Dme7h5jXbcj0IomtRFs"
-WEBHOOK_URL = "Sardor44.pythonanywhere.com"  # ⚠️ ЗАМЕНИ на свой URL!
+TOKEN = "8337396229:AAES7rHlibutnscXOHk7t6XB2fK2CUni5eE"
+WEBHOOK_URL = "https://stars-prok.onrender.com"  # ⚠️ ЗАМЕНИ на свой URL!
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 PORT = 8080
 
