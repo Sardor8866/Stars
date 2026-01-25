@@ -1,3 +1,38 @@
+import telebot
+from telebot import types
+import sqlite3
+import json
+import time
+import threading
+from datetime import datetime
+import random
+import string
+import re
+import html
+from flask import Flask, request, jsonify
+from channel import WithdrawalChannel  # Импортируем модуль канала
+
+# ========== НАСТРОЙКИ ==========
+TOKEN = "8337396229:AAES7rHlibutnscXOHk7t6XB2fK2CUni5eE"
+WEBHOOK_URL = "https://stars-prok.onrender.com"  # ⚠️ ЗАМЕНИ на свой URL!
+WEBHOOK_PATH = f"/webhook/{TOKEN}"
+PORT = 8080
+
+# НАСТРОЙКИ АДМИНА (МОЖНО МЕНЯТЬ)
+MIN_WITHDRAWAL = 1  # Минимальная сумма вывода в USDT (ИЗМЕНЕНО НА 1)
+REFERRAL_REWARD = 0.1  # Награда за реферала в USDT (ИЗМЕНЕНО НА 0.1)
+REFERRAL_WELCOME_BONUS = 0  # Приветственный бонус реферала в USDT (ИЗМЕНЕНО НА 0)
+CURRENCY = "USDT"  # Валюта
+
+# Инициализация бота
+bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
+
+# Инициализация Flask приложения
+app = Flask(__name__)
+
+# Инициализация канала для уведомлений
+withdrawal_channel = WithdrawalChannel(TOKEN)
+
 # ========== НАСТРОЙКИ ==========
 TOKEN = "8337396229:AAES7rHlibutnscXOHk7t6XB2fK2CUni5eE"
 WEBHOOK_URL = "https://stars-prok.onrender.com"  # ⚠️ ЗАМЕНИ на свой URL!
