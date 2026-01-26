@@ -530,11 +530,11 @@ def create_main_menu():
     """Главное меню - 5 кнопок"""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     buttons = [
-        "Пробиль",
-        "Информация о проекте",
-        "Заработать",
-        "Ежедневный бонус",
-        "Тех. поддержка"
+        "👤Профиль",
+        "👨‍💻Информация о проекте",
+        "💸Заработать",
+        "🎁Ежедневный бонус",
+        "🆘Тех. поддержка"
     ]
     keyboard.add(*buttons)
     return keyboard
@@ -780,15 +780,15 @@ def profile_command(message):
             reply_markup=keyboard
         )
 
-@bot.message_handler(func=lambda message: message.text == "Информация о проекте")
+@bot.message_handler(func=lambda message: message.text == "👨‍💻Информация о проекте")
 def project_info_command(message):
     """Информация о проекте как на скрине с кнопками"""
     stats = get_bot_stats()
     
-    info_text = f"""<b>Информация о проекте:</b>
+    info_text = f"""<b>👨‍💻Информация о проекте:</b>
 
-Выплачено всего: {format_usdt(stats['withdrawn_total'])}
-Пользователей: {stats['total_users']} шт."""
+💸Выплачено всего: {format_usdt(stats['withdrawn_total'])}
+👥Пользователей: {stats['total_users']} шт."""
 
     # Создаем клавиатуру с кнопками "Топ" и "Разработчик"
     keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -894,7 +894,7 @@ def invite_command(message):
             reply_markup=create_referral_keyboard(message.from_user.id)
         )
 
-@bot.message_handler(func=lambda message: message.text == "💰 Вывод")
+@bot.message_handler(func=lambda message: message.text == "✨Подать заявку на вывод")
 def withdrawal_command(message):
     user_info = get_user_info(message.from_user.id)
     min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
@@ -1110,16 +1110,16 @@ Username: <b>@{username}</b>
             reply_markup=create_main_menu()
         )
 
-@bot.message_handler(func=lambda message: message.text == "Тех. поддержка")
+@bot.message_handler(func=lambda message: message.text == "🆘Тех. поддержка")
 def support_command(message):
-    """Техническая поддержка"""
+    """🆘Техническая поддержка"""
     support_text = """<b>Тех. поддержка</b>
 
 <b>👨‍💻 Техническая поддержка</b>
 
 <b>📞 Связь:</b>
 Для связи с поддержкой используйте:
-• Написать разработчику
+• @kenzooov
 • Отправить сообщение администратору
 
 <b>⏱️ Время ответа:</b>
@@ -1137,7 +1137,7 @@ def support_command(message):
         parse_mode='HTML'
     )
 
-@bot.message_handler(func=lambda message: message.text == "Ежедневный бонус")
+@bot.message_handler(func=lambda message: message.text == "🎁Ежедневный бонус")
 def daily_bonus_command(message):
     """Обработчик ежедневного бонуса"""
     user_id = message.from_user.id
@@ -1164,15 +1164,15 @@ def daily_bonus_command(message):
         # Выдаем бонус
         bonus_amount, new_balance = claim_daily_bonus(user_id)
         
-        bonus_text = f"""<b>ЕЖЕДНЕВНЫЙ БОНУС</b>
+        bonus_text = f"""<b>🎁ЕЖЕДНЕВНЫЙ БОНУС</b>
 
 🎉 <b>Вы получили ежедневный бонус!</b>
 
 <b>НАЧИСЛЕНИЕ:</b>
-Бонус: +{format_usdt(bonus_amount)}
-Новый баланс: {format_usdt(new_balance)}
+🎁Бонус: +{format_usdt(bonus_amount)}
+💰Новый баланс: {format_usdt(new_balance)}
 
-<b>СЛЕДУЮЩИЙ БОНУС:</b>
+<b>⌛️СЛЕДУЮЩИЙ БОНУС:</b>
 Через 24 часа
 
 <b>🎯 Возвращайтесь завтра за новым бонусом!</b>"""
