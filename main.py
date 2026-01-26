@@ -4,7 +4,7 @@ import sqlite3
 import json
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 import string
 import re
@@ -22,6 +22,7 @@ PORT = 8080
 MIN_WITHDRAWAL = 1  # Минимальная сумма вывода в USDT
 REFERRAL_REWARD = 0.1  # Награда за реферала в USDT
 REFERRAL_WELCOME_BONUS = 0  # Приветственный бонус реферала в USDT
+DAILY_BONUS_AMOUNT = 0.1  # Ежедневный бонус
 CURRENCY = "USDT"  # Валюта
 
 # Инициализация бота
@@ -397,6 +398,63 @@ def deactivate_check(check_code):
 
     return True
 
+# ========== ФУНКЦИИ ДЛЯ ЕЖЕДНЕВНОГО БОНУСА ==========
+def can_claim_daily_bonus(user_id):
+    """Проверка, может ли пользователь получить ежедневный бонус"""
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT last_daily_bonus FROM users WHERE user_id = ?
+    ''', (user_id,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result or not result[0]:
+        return True, None  # Никогда не получал бонус
+    
+    last_claim = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
+    now = datetime.now()
+    
+    # Проверяем, прошло ли 24 часа
+    if now >= last_claim + timedelta(hours=24):
+        return True, None
+    else:
+        next_claim = last_claim + timedelta(hours=24)
+        remaining_time = next_claim - now
+        hours = int(remaining_time.total_seconds() // 3600)
+        minutes = int((remaining_time.total_seconds() % 3600) // 60)
+        return False, f"{hours:02d}:{minutes:02d}"
+
+def claim_daily_bonus(user_id):
+    """Выдача ежедневного бонуса пользователю"""
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+    cursor = conn.cursor()
+    
+    # Получаем настройки
+    daily_bonus = get_setting('daily_bonus', DAILY_BONUS_AMOUNT)
+    
+    # Начисляем бонус
+    cursor.execute("UPDATE users SET balance = balance + ?, last_daily_bonus = CURRENT_TIMESTAMP WHERE user_id = ?", 
+                  (daily_bonus, user_id))
+    
+    # Записываем транзакцию
+    cursor.execute('''
+        INSERT INTO transactions (user_id, amount, type, description)
+        VALUES (?, ?, ?, ?)
+    ''', (user_id, daily_bonus, 'daily_bonus', 'Ежедневный бонус'))
+    
+    conn.commit()
+    
+    # Получаем новый баланс
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    new_balance = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    return daily_bonus, new_balance
+
 # ========== ОБНОВЛЕННЫЕ ФУНКЦИИ БАЗЫ ДАННЫХ ==========
 def init_db():
     """Инициализация базы данных для USDT"""
@@ -411,6 +469,7 @@ def init_db():
             referred_by INTEGER DEFAULT NULL,
             balance REAL DEFAULT 0,  -- Изменено на REAL для хранения USDT
             registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_daily_bonus TIMESTAMP DEFAULT NULL,
             FOREIGN KEY (referred_by) REFERENCES users(user_id)
         )
     ''')
@@ -457,6 +516,7 @@ def init_db():
         ('min_withdrawal', MIN_WITHDRAWAL, 'Минимальная сумма вывода в USDT'),
         ('referral_reward', REFERRAL_REWARD, 'Награда за реферала в USDT'),
         ('referral_welcome_bonus', REFERRAL_WELCOME_BONUS, 'Приветственный бонус реферала в USDT'),
+        ('daily_bonus', DAILY_BONUS_AMOUNT, 'Ежедневный бонус в USDT'),
     ]
 
     for name, value, desc in default_settings:
@@ -631,11 +691,12 @@ def get_user_info(user_id):
 
     cursor.execute('''
         SELECT u.user_id, u.username, u.full_name, u.referred_by, u.balance,
-               u.registration_date, COUNT(r.user_id) as referrals_count
+               u.registration_date, COUNT(r.user_id) as referrals_count,
+               u.last_daily_bonus
         FROM users u
         LEFT JOIN users r ON u.user_id = r.referred_by
         WHERE u.user_id = ?
-        GROUP BY u.user_id, u.username, u.full_name, u.referred_by, u.balance, u.registration_date
+        GROUP BY u.user_id, u.username, u.full_name, u.referred_by, u.balance, u.registration_date, u.last_daily_bonus
     ''', (user_id,))
 
     user = cursor.fetchone()
@@ -661,7 +722,8 @@ def get_user_info(user_id):
             'referred_by': user[3],
             'balance': user[4],
             'registration_date': reg_date_str,
-            'referrals_count': user[6] if user[6] else 0
+            'referrals_count': user[6] if user[6] else 0,
+            'last_daily_bonus': user[7]
         }
     return None
 
@@ -814,7 +876,7 @@ def get_transactions(user_id, limit=10):
     return result
 
 def create_main_menu():
-    """Главное меню"""
+    """Главное меню (точное соответствие скриншоту)"""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     buttons = [
         "👤 Профиль",
@@ -823,7 +885,8 @@ def create_main_menu():
         "📊 Статистика",
         "🏆 Топ",
         "🎫 Чек",
-        "📋 Заявки"
+        "📋 Заявки",
+        "🎁 Ежедневный бонус"
     ]
     keyboard.add(*buttons)
     return keyboard
@@ -1111,6 +1174,7 @@ def bot_stats_command(message):
         min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
         welcome_bonus = get_setting('referral_welcome_bonus', REFERRAL_WELCOME_BONUS)
+        daily_bonus = get_setting('daily_bonus', DAILY_BONUS_AMOUNT)
 
         stats_text = f"""📊 <b>СТАТИСТИКА БОТА</b>
 
@@ -1129,7 +1193,8 @@ def bot_stats_command(message):
 <b>⚙️ НАСТРОЙКИ:</b>
 ├ Мин. вывод: <b>{format_usdt(min_withdrawal)}</b>
 ├ Награда: <b>{format_usdt(referral_reward)}</b>
-└ Бонус: <b>{format_usdt(welcome_bonus)}</b>
+├ Бонус: <b>{format_usdt(welcome_bonus)}</b>
+└ Ежед. бонус: <b>{format_usdt(daily_bonus)}</b>
 
 <b>📺 КАНАЛЫ:</b>
 ├ Всего: <b>{len(REQUIRED_CHANNELS) + len(SIMPLE_LINKS)}</b>
@@ -2354,6 +2419,7 @@ def system_settings_command(message):
     min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
     welcome_bonus = get_setting('referral_welcome_bonus', REFERRAL_WELCOME_BONUS)
+    daily_bonus = get_setting('daily_bonus', DAILY_BONUS_AMOUNT)
 
     settings_text = f"""⚙️ <b>НАСТРОЙКИ СИСТЕМЫ</b>
 
@@ -2364,13 +2430,17 @@ def system_settings_command(message):
 ├ Награда: <b>{format_usdt(referral_reward)}</b>
 └ Бонус рефералу: <b>{format_usdt(welcome_bonus)}</b>
 
+<b>🎁 ЕЖЕДНЕВНЫЙ БОНУС:</b>
+Сумма: <b>{format_usdt(daily_bonus)}</b>
+
 Выберите настройку для изменения:"""
 
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         types.InlineKeyboardButton("💰 Мин. вывод", callback_data="setting_min_withdrawal"),
         types.InlineKeyboardButton("🎁 Награда", callback_data="setting_referral_reward"),
-        types.InlineKeyboardButton("👋 Бонус", callback_data="setting_welcome_bonus")
+        types.InlineKeyboardButton("👋 Бонус", callback_data="setting_welcome_bonus"),
+        types.InlineKeyboardButton("🎁 Ежед. бонус", callback_data="setting_daily_bonus")
     )
     keyboard.add(
         types.InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")
@@ -2390,7 +2460,8 @@ def setting_callback(call):
     setting_names = {
         'min_withdrawal': 'Минимальный вывод',
         'referral_reward': 'Награда за реферала',
-        'welcome_bonus': 'Приветственный бонус реферала'
+        'welcome_bonus': 'Приветственный бонус реферала',
+        'daily_bonus': 'Ежедневный бонус'
     }
 
     current_value = get_setting(setting_name)
@@ -2424,7 +2495,8 @@ def process_setting_update(message, setting_name, chat_id, message_id):
         setting_names = {
             'min_withdrawal': 'Минимальный вывод',
             'referral_reward': 'Награда за реферала',
-            'welcome_bonus': 'Приветственный бонус реферала'
+            'welcome_bonus': 'Приветственный бонус реферала',
+            'daily_bonus': 'Ежедневный бонус'
         }
 
         bot.send_message(
@@ -2675,24 +2747,33 @@ def profile_command(message):
         total_withdrawn = get_user_total_withdrawn(message.from_user.id)
         ref_count = user_info['referrals_count']
         
-        # КОРОТКИЙ ТЕКСТ ПРОФИЛЯ:
-        profile_text = f"""👤 <b>Ваш профиль</b>
+        # ТОЧНЫЙ ТЕКСТ ПРОФИЛЯ КАК НА СКРИНЕ:
+        profile_text = f"""Пробиль  {datetime.now().strftime('%H:%M')}
 
-<b>🆔 ID:</b> <code>{user_info['user_id']}</code>
-<b>💰 Баланс:</b> {format_usdt(user_info['balance'])}
-<b>📤 Выведено:</b> {format_usdt(total_withdrawn)}
-<b>👥 Приглашено:</b> {ref_count} чел.
+<b>Ваш профиль:</b>
 
-🔗 <b>Реф. ссылка:</b>
-<code>{generate_referral_link(message.from_user.id)}</code>
+[ ] Ваш ID: <code>{user_info['user_id']}</code>  
+[ ] Ваш баланс: {format_usdt(user_info['balance'])}
 
-<b>🎁 Награда за друга:</b> {format_usdt(get_setting('referral_reward', REFERRAL_REWARD))}"""
+Выведено: {format_usdt(total_withdrawn)}
+
+Число приглашённых рефералов: {ref_count}  {datetime.now().strftime('%H:%M')}
+
+<b>Подаль заявку на вывод</b>"""
+
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(
+            types.InlineKeyboardButton(
+                "💰 Вывод",
+                callback_data="go_to_withdraw"
+            )
+        )
 
         bot.send_message(
             message.chat.id,
             profile_text,
             parse_mode='HTML',
-            reply_markup=create_referral_keyboard(message.from_user.id)
+            reply_markup=keyboard
         )
 
 @bot.message_handler(func=lambda message: message.text == "🔗 Пригласить")
@@ -2718,19 +2799,15 @@ def invite_command(message):
         referrals_count = user_info['referrals_count']
         earned = referrals_count * referral_reward
 
-        # КОРОТКИЙ ТЕКСТ РЕФЕРАЛКИ:
-        invite_text = f"""🎁 <b>Реферальная программа</b>
+        # ТОЧНЫЙ ТЕКСТ КАК НА СКРИНЕ:
+        invite_text = f"""После приглашения, средства будут автоматически зачислены на твой баланс.
 
-<b>🎁 Награда:</b> {format_usdt(referral_reward)} за друга
-
-<b>🔗 Ваша ссылка:</b>
+<b>Ссылка для приглашения:</b>
 <code>{referral_link}</code>
 
-<b>📊 Статистика:</b>
-├ Приглашено: {referrals_count} чел.
-└ Заработано: {format_usdt(earned)}
+<b>Всего пригласил:</b> {referrals_count} человек
 
-💸 <b>Средства зачисляются автоматически!</b>"""
+<b>Приглашай друзей и поднимай легкие $$$ на свой баланс!</b>"""
 
         bot.send_message(
             message.chat.id,
@@ -2761,7 +2838,7 @@ def withdrawal_command(message):
         bot.send_message(message.chat.id, "❌ Ошибка: пользователь не найден")
         return
 
-    # КОРОТКИЙ ТЕКСТ ВЫВОДА:
+    # ТЕКСТ ВЫВОДА:
     withdrawal_text = f"""💰 <b>Вывод {CURRENCY}</b>
 
 <b>💰 Баланс:</b> {format_usdt(user_info['balance'])}
@@ -2776,6 +2853,11 @@ def withdrawal_command(message):
         parse_mode='HTML',
         reply_markup=create_withdrawal_keyboard()
     )
+
+@bot.callback_query_handler(func=lambda call: call.data == "go_to_withdraw")
+def go_to_withdraw_callback(call):
+    """Переход к выводу из профиля"""
+    withdrawal_command(call.message)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('withdraw_'))
 def handle_withdrawal_callback(call):
@@ -3107,7 +3189,7 @@ def activate_check_command(message):
                 message.chat.id,
                 f"""✅ <b>ЧЕК АКТИВИРОВАН</b>
 
-✅ <b>Чек активирован успешно!</b> 🎉
+✅ <b>Чек активирован успечно!</b> 🎉
 
 <b>💰 НАЧИСЛЕНИЕ:</b>
 {result_message}
@@ -3301,6 +3383,66 @@ def top_command(message):
             parse_mode='HTML'
         )
 
+@bot.message_handler(func=lambda message: message.text == "🎁 Ежедневный бонус")
+def daily_bonus_command(message):
+    """Обработчик ежедневного бонуса"""
+    user_id = message.from_user.id
+    
+    # Проверка подписки на каналы
+    if REQUIRED_CHANNELS:
+        is_subscribed, subscription_data = check_subscription_required(user_id)
+        if not is_subscribed:
+            channels_text, keyboard = subscription_data
+            bot.send_message(
+                message.chat.id,
+                channels_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            return
+    
+    # Проверяем, может ли пользователь получить бонус
+    can_claim, remaining_time = can_claim_daily_bonus(user_id)
+    
+    daily_bonus_amount = get_setting('daily_bonus', DAILY_BONUS_AMOUNT)
+    
+    if can_claim:
+        # Выдаем бонус
+        bonus_amount, new_balance = claim_daily_bonus(user_id)
+        
+        bonus_text = f"""🎁 <b>ЕЖЕДНЕВНЫЙ БОНУС</b>
+
+🎉 <b>Вы получили ежедневный бонус!</b>
+
+<b>💰 НАЧИСЛЕНИЕ:</b>
+├ Бонус: +{format_usdt(bonus_amount)}
+└ Новый баланс: {format_usdt(new_balance)}
+
+<b>⏰ СЛЕДУЮЩИЙ БОНУС:</b>
+Через 24 часа
+
+🎯 <b>Возвращайтесь завтра за новым бонусом!</b>"""
+    else:
+        # Показываем оставшееся время
+        bonus_text = f"""🎁 <b>ЕЖЕДНЕВНЫЙ БОНУС</b>
+
+⏳ <b>Вы уже получали бонус сегодня</b>
+
+<b>💰 БОНУС:</b>
+{format_usdt(daily_bonus_amount)} каждые 24 часа
+
+<b>⏰ ДОСТУПНО ЧЕРЕЗ:</b>
+{remaining_time}
+
+🎯 <b>Возвращайтесь позже!</b>"""
+    
+    bot.send_message(
+        message.chat.id,
+        bonus_text,
+        parse_mode='HTML',
+        reply_markup=create_main_menu()
+    )
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("copy_link_"))
 def copy_link_callback(call):
     """Обработка кнопки копирования ссылки"""
@@ -3367,6 +3509,10 @@ def stats_link_command(message):
 @bot.message_handler(commands=['mywithdrawals'])
 def my_withdrawals_link_command(message):
     my_withdrawals_command(message)
+
+@bot.message_handler(commands=['daily'])
+def daily_bonus_link_command(message):
+    daily_bonus_command(message)
 
 def send_daily_notifications():
     """Функция для отправки уведомлений"""
@@ -3449,6 +3595,7 @@ if __name__ == "__main__":
         print(f"💵 Валюта: {CURRENCY}")
         print(f"💰 Мин. вывод: {get_setting('min_withdrawal', MIN_WITHDRAWAL)} {CURRENCY}")
         print(f"🎁 Награда: {get_setting('referral_reward', REFERRAL_REWARD)} {CURRENCY}")
+        print(f"🎁 Ежед. бонус: {get_setting('daily_bonus', DAILY_BONUS_AMOUNT)} {CURRENCY}")
         print(f"📺 Каналов: {len(REQUIRED_CHANNELS)} обяз. + {len(SIMPLE_LINKS)} простых")
         print(f"👑 Админов: {len(ADMIN_IDS)}")
 
