@@ -39,7 +39,7 @@ ADMIN_IDS = [8118184388]
 REQUIRED_CHANNELS = []  # Каналы с обязательной подпиской
 
 # Хранение капчи
-user_captcha = {}  # {user_id: {'correct_emoji': emoji, 'attempts': 0}}
+user_captcha = {}  # {user_id: {'correct_emoji': emoji, 'attempts': 0, 'solved': False}}
 
 # Список эмоджи для капчи
 EMOJI_LIST = ['😀', '😂', '😍', '😎', '🤔', '😴', '🥳', '🤯', '😱', '🤮', 
@@ -115,11 +115,11 @@ def check_captcha_required(user_id):
     if user_id in ADMIN_IDS:
         return False
     
-    # Проверяем, есть ли уже решенная капча
-    if user_id in user_captcha and user_captcha[user_id].get('solved', False):
-        return False
+    # Если пользователя нет в словаре капчи или капча не решена
+    if user_id not in user_captcha or not user_captcha[user_id].get('solved', False):
+        return True
     
-    return True
+    return False
 
 def create_captcha_keyboard(emoji_options):
     """Создание клавиатуры для капчи"""
@@ -138,6 +138,27 @@ def create_captcha_keyboard(emoji_options):
         keyboard.add(buttons[i], buttons[i + 1])
     
     return keyboard
+
+def show_captcha(chat_id, user_id):
+    """Показать капчу пользователю"""
+    correct_emoji, emoji_options, correct_index = generate_emoji_captcha()
+    
+    user_captcha[user_id] = {
+        'correct_emoji': correct_emoji,
+        'correct_index': correct_index,
+        'emoji_options': emoji_options,
+        'attempts': 0,
+        'solved': False
+    }
+    
+    captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
+    
+    bot.send_message(
+        chat_id,
+        captcha_text,
+        parse_mode='HTML',
+        reply_markup=create_captcha_keyboard(emoji_options)
+    )
 
 # ========== ФУНКЦИИ ДЛЯ USDT ==========
 def format_usdt(amount):
@@ -713,24 +734,7 @@ def start_command(message):
     
     if access_status == 'captcha':
         # Показываем капчу
-        correct_emoji, emoji_options, correct_index = generate_emoji_captcha()
-        
-        user_captcha[user_id] = {
-            'correct_emoji': correct_emoji,
-            'correct_index': correct_index,
-            'emoji_options': emoji_options,
-            'attempts': 0,
-            'solved': False
-        }
-        
-        captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
-        
-        bot.send_message(
-            message.chat.id,
-            captcha_text,
-            parse_mode='HTML',
-            reply_markup=create_captcha_keyboard(emoji_options)
-        )
+        show_captcha(message.chat.id, user_id)
         return
     
     elif access_status == 'subscription':
@@ -878,33 +882,8 @@ def handle_captcha_callback(call):
         
         if captcha_data['attempts'] >= 3:
             # Слишком много попыток - новая капча
-            correct_emoji, emoji_options, correct_index = generate_emoji_captcha()
-            
-            user_captcha[user_id] = {
-                'correct_emoji': correct_emoji,
-                'correct_index': correct_index,
-                'emoji_options': emoji_options,
-                'attempts': 0,
-                'solved': False
-            }
-            
-            captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
-            
-            try:
-                bot.edit_message_text(
-                    captcha_text,
-                    call.message.chat.id,
-                    call.message.message_id,
-                    parse_mode='HTML',
-                    reply_markup=create_captcha_keyboard(emoji_options)
-                )
-            except:
-                bot.send_message(
-                    call.message.chat.id,
-                    captcha_text,
-                    parse_mode='HTML',
-                    reply_markup=create_captcha_keyboard(emoji_options)
-                )
+            bot.answer_callback_query(call.id, "❌ Неправильно! Новая капча")
+            show_captcha(call.message.chat.id, user_id)
         else:
             bot.answer_callback_query(call.id, "❌ Неправильно, попробуйте еще раз")
 
@@ -918,24 +897,7 @@ def handle_main_menu(message):
     
     if access_status == 'captcha':
         # Показываем капчу
-        correct_emoji, emoji_options, correct_index = generate_emoji_captcha()
-        
-        user_captcha[user_id] = {
-            'correct_emoji': correct_emoji,
-            'correct_index': correct_index,
-            'emoji_options': emoji_options,
-            'attempts': 0,
-            'solved': False
-        }
-        
-        captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
-        
-        bot.send_message(
-            message.chat.id,
-            captcha_text,
-            parse_mode='HTML',
-            reply_markup=create_captcha_keyboard(emoji_options)
-        )
+        show_captcha(message.chat.id, user_id)
         return
     
     elif access_status == 'subscription':
@@ -1433,24 +1395,7 @@ def check_subscription_after_callback(call):
 
         # Проверяем капчу
         if check_captcha_required(user_id):
-            correct_emoji, emoji_options, correct_index = generate_emoji_captcha()
-            
-            user_captcha[user_id] = {
-                'correct_emoji': correct_emoji,
-                'correct_index': correct_index,
-                'emoji_options': emoji_options,
-                'attempts': 0,
-                'solved': False
-            }
-            
-            captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
-            
-            bot.send_message(
-                call.message.chat.id,
-                captcha_text,
-                parse_mode='HTML',
-                reply_markup=create_captcha_keyboard(emoji_options)
-            )
+            show_captcha(call.message.chat.id, user_id)
             return
 
         # Регистрируем пользователя если он еще не зарегистрирован
@@ -2453,7 +2398,7 @@ if __name__ == "__main__":
         print(f"👤 Бот: @{bot_info.username}")
         print(f"🌐 Вебхук: {WEBHOOK_URL}{WEBHOOK_PATH}")
         print(f"💵 Валюта: {CURRENCY}")
-        print(f"🔒 Капча: включена (только + и -)")
+        print(f"🔒 Капча: включена")
         print(f"💰 Мин. вывод: {get_setting('min_withdrawal', MIN_WITHDRAWAL)} {CURRENCY}")
         print(f"🎁 Награда: {get_setting('referral_reward', REFERRAL_REWARD)} {CURRENCY}")
         print(f"🎁 Ежед. бонус: {get_setting('daily_bonus', DAILY_BONUS_AMOUNT)} {CURRENCY}")
