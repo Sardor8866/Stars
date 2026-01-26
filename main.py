@@ -24,7 +24,7 @@ DAILY_BONUS_AMOUNT = 0.1
 CURRENCY = "USDT"
 
 # Контакт разработчика
-DEVELOPER_CONTACT = "@developer_username"  # Замените на реальный контакт
+DEVELOPER_USERNAME = "kenzooov"
 
 # Инициализация бота
 bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
@@ -230,6 +230,7 @@ def init_db():
 def load_channels_from_db():
     """Загрузка каналов из базы данных при запуске"""
     global REQUIRED_CHANNELS
+    REQUIRED_CHANNELS = []  # Очищаем список перед загрузкой
 
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -291,6 +292,16 @@ def register_user(user_id, username, full_name, referrer_id=None):
             INSERT INTO transactions (user_id, amount, type, description)
             VALUES (?, ?, ?, ?)
         ''', (user_id, 0, 'registration', 'Регистрация в боте'))
+
+        # Если есть реферер, начисляем ему награду
+        if referrer_id:
+            referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (referral_reward, referrer_id))
+            
+            cursor.execute('''
+                INSERT INTO transactions (user_id, amount, type, description)
+                VALUES (?, ?, ?, ?)
+            ''', (referrer_id, referral_reward, 'referral_bonus', f'Награда за приглашение пользователя {user_id}'))
 
         conn.commit()
 
@@ -591,6 +602,19 @@ def start_command(message):
     username = sanitize_text(message.from_user.username) if message.from_user.username else ""
     full_name = sanitize_text(message.from_user.full_name) if message.from_user.full_name else f"User_{user_id}"
 
+    # Проверяем подписку на каналы перед регистрацией
+    if REQUIRED_CHANNELS:
+        is_subscribed, subscription_data = check_subscription_required(user_id)
+        if not is_subscribed:
+            channels_text, keyboard = subscription_data
+            bot.send_message(
+                message.chat.id,
+                channels_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            return
+
     if len(message.text.split()) > 1:
         start_param = message.text.split()[1]
         
@@ -617,20 +641,6 @@ def start_command(message):
             register_user(user_id, username, full_name, None)
     else:
         register_user(user_id, username, full_name, None)
-
-    # ПРОВЕРКА ПОДПИСКИ НА КАНАЛЫ
-    if REQUIRED_CHANNELS:
-        is_subscribed, subscription_data = check_subscription_required(user_id)
-
-        if not is_subscribed:
-            channels_text, keyboard = subscription_data
-            bot.send_message(
-                message.chat.id,
-                channels_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-            return
 
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
@@ -675,14 +685,37 @@ def check_subscription_after_callback(call):
         except:
             pass
 
+        # Регистрируем пользователя если он еще не зарегистрирован
+        username = sanitize_text(call.from_user.username) if call.from_user.username else ""
+        full_name = sanitize_text(call.from_user.full_name) if call.from_user.full_name else f"User_{user_id}"
+        
+        conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            register_user(user_id, username, full_name, None)
+
         # Показываем главное меню
+        referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+        welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
+
+✨ <b>Добро пожаловать, {full_name}!</b>
+
+За каждого приглашенного друга: {format_usdt(referral_reward)}
+
+Средства зачисляются автоматически.
+
+Приглашай друзей и зарабатывай!
+
+<b>👇 НАВИГАЦИЯ:</b>
+Используйте кнопки ниже:"""
+
         bot.send_message(
             call.message.chat.id,
-            """✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
-
-🎉 <b>Добро пожаловать в бот!</b>
-
-Выберите действие из меню ниже:""",
+            welcome_text,
             parse_mode='HTML',
             reply_markup=create_main_menu()
         )
@@ -736,9 +769,11 @@ def check_subscription_after_callback(call):
 
 @bot.message_handler(func=lambda message: message.text == "👤Профиль")
 def profile_command(message):
+    user_id = message.from_user.id
+    
     # Проверяем подписку на каналы
     if REQUIRED_CHANNELS:
-        is_subscribed, subscription_data = check_subscription_required(message.from_user.id)
+        is_subscribed, subscription_data = check_subscription_required(user_id)
         if not is_subscribed:
             channels_text, keyboard = subscription_data
             bot.send_message(
@@ -749,13 +784,12 @@ def profile_command(message):
             )
             return
 
-    user_info = get_user_info(message.from_user.id)
+    user_info = get_user_info(user_id)
     
     if user_info:
-        total_withdrawn = get_user_total_withdrawn(message.from_user.id)
+        total_withdrawn = get_user_total_withdrawn(user_id)
         ref_count = user_info['referrals_count']
         
-        # ИСПРАВЛЕННАЯ СТРОКА С <blockquote>:
         profile_text = f"""<b>👤Ваш профиль:</b>
 
 🆔Ваш ID: <code>{user_info['user_id']}</code>  
@@ -779,10 +813,31 @@ def profile_command(message):
             parse_mode='HTML',
             reply_markup=keyboard
         )
+    else:
+        bot.send_message(
+            message.chat.id,
+            "❌ Пользователь не найден. Нажмите /start",
+            parse_mode='HTML'
+        )
 
 @bot.message_handler(func=lambda message: message.text == "👨‍💻Информация о проекте")
 def project_info_command(message):
     """Информация о проекте как на скрине с кнопками"""
+    user_id = message.from_user.id
+    
+    # Проверяем подписку на каналы
+    if REQUIRED_CHANNELS:
+        is_subscribed, subscription_data = check_subscription_required(user_id)
+        if not is_subscribed:
+            channels_text, keyboard = subscription_data
+            bot.send_message(
+                message.chat.id,
+                channels_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            return
+    
     stats = get_bot_stats()
     
     info_text = f"""<b>👨‍💻Информация о проекте:</b>
@@ -794,7 +849,7 @@ def project_info_command(message):
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         types.InlineKeyboardButton("🏆 Топ", callback_data="show_top"),
-        types.InlineKeyboardButton("👨‍💻 Разработчик", url=f"https://t.me/{kenzooov.replace('@', '')}")
+        types.InlineKeyboardButton("👨‍💻 Разработчик", url=f"https://t.me/{DEVELOPER_USERNAME}")
     )
 
     bot.send_message(
@@ -857,9 +912,11 @@ def show_top_callback(call):
 
 @bot.message_handler(func=lambda message: message.text == "💸Заработать")
 def invite_command(message):
+    user_id = message.from_user.id
+    
     # Проверяем подписку на каналы
     if REQUIRED_CHANNELS:
-        is_subscribed, subscription_data = check_subscription_required(message.from_user.id)
+        is_subscribed, subscription_data = check_subscription_required(user_id)
         if not is_subscribed:
             channels_text, keyboard = subscription_data
             bot.send_message(
@@ -870,20 +927,19 @@ def invite_command(message):
             )
             return
 
-    user_info = get_user_info(message.from_user.id)
+    user_info = get_user_info(user_id)
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
     if user_info:
-        referral_link = generate_referral_link(message.from_user.id)
+        referral_link = generate_referral_link(user_id)
         referrals_count = user_info['referrals_count']
 
-        # ТОЧНЫЙ ТЕКСТ КАК НА СКРИНЕ
         invite_text = f"""💹После приглашения, средства будут автоматически зачислены на твой баланс.
 
 <b>🔗Ссылка для приглашения:</b>
 <code>{referral_link}</code>
 
-<blockquote>👥Всего пригласил:</b> {referrals_count} человек<blockquote>
+<blockquote>👥Всего пригласил: {referrals_count} человек</blockquote>
 
 <b>Приглашай друзей и поднимай легкие $$$ на свой баланс💸!</b>"""
 
@@ -891,12 +947,18 @@ def invite_command(message):
             message.chat.id,
             invite_text,
             parse_mode='HTML',
-            reply_markup=create_referral_keyboard(message.from_user.id)
+            reply_markup=create_referral_keyboard(user_id)
+        )
+    else:
+        bot.send_message(
+            message.chat.id,
+            "❌ Пользователь не найден. Нажмите /start",
+            parse_mode='HTML'
         )
 
-@bot.message_handler(func=lambda message: message.text == "✨Подать заявку на вывод")
 def withdrawal_command(message):
-    user_info = get_user_info(message.from_user.id)
+    user_id = message.from_user.id
+    user_info = get_user_info(user_id)
     min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
 
     if not user_info:
@@ -921,7 +983,37 @@ def withdrawal_command(message):
 @bot.callback_query_handler(func=lambda call: call.data == "go_to_withdraw")
 def go_to_withdraw_callback(call):
     """Переход к выводу из профиля"""
-    withdrawal_command(call.message)
+    user_id = call.from_user.id
+    user_info = get_user_info(user_id)
+    min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
+
+    if not user_info:
+        bot.answer_callback_query(call.id, "❌ Ошибка: пользователь не найден", show_alert=True)
+        return
+
+    withdrawal_text = f"""<b>Вывод {CURRENCY}</b>
+
+<b>Баланс:</b> {format_usdt(user_info['balance'])}
+<b>Мин. сумма:</b> {format_usdt(min_withdrawal)}
+<b>Время:</b> до 24 часов
+
+<b>Выберите сумму:</b>"""
+
+    try:
+        bot.edit_message_text(
+            withdrawal_text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='HTML',
+            reply_markup=create_withdrawal_keyboard()
+        )
+    except:
+        bot.send_message(
+            call.message.chat.id,
+            withdrawal_text,
+            parse_mode='HTML',
+            reply_markup=create_withdrawal_keyboard()
+        )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('withdraw_'))
 def handle_withdrawal_callback(call):
@@ -1113,13 +1205,28 @@ Username: <b>@{username}</b>
 @bot.message_handler(func=lambda message: message.text == "🆘Тех. поддержка")
 def support_command(message):
     """🆘Техническая поддержка"""
-    support_text = """<b>Тех. поддержка</b>
+    user_id = message.from_user.id
+    
+    # Проверяем подписку на каналы
+    if REQUIRED_CHANNELS:
+        is_subscribed, subscription_data = check_subscription_required(user_id)
+        if not is_subscribed:
+            channels_text, keyboard = subscription_data
+            bot.send_message(
+                message.chat.id,
+                channels_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            return
+    
+    support_text = f"""<b>Тех. поддержка</b>
 
 <b>👨‍💻 Техническая поддержка</b>
 
 <b>📞 Связь:</b>
 Для связи с поддержкой используйте:
-• @kenzooov
+• @{DEVELOPER_USERNAME}
 • Отправить сообщение администратору
 
 <b>⏱️ Время ответа:</b>
@@ -1498,13 +1605,13 @@ def process_add_channel(message):
 
         # Проверяем, нет ли уже такого канала
         global REQUIRED_CHANNELS
-        if any(ch['channel_id'] == channel_id for ch in REQUIRED_CHANNELS if ch['channel_id']):
+        if any(ch.get('channel_id') == channel_id for ch in REQUIRED_CHANNELS):
             bot.send_message(message.chat.id, "❌ Этот канал уже добавлен как обязательный")
             return
 
         # Добавляем канал
         channel_data = {
-            'channel_id': channel_id,
+            'channel_id': str(channel_id),
             'channel_username': channel_username,
             'channel_name': channel_name,
             'channel_link': channel_link,
@@ -1518,7 +1625,7 @@ def process_add_channel(message):
         cursor.execute('''
             INSERT OR REPLACE INTO channels (channel_id, channel_username, channel_name, channel_link, channel_type, added_by)
             VALUES (?, ?, ?, ?, 'required', ?)
-        ''', (channel_id, channel_username, channel_name, channel_link, message.from_user.id))
+        ''', (str(channel_id), channel_username, channel_name, channel_link, message.from_user.id))
 
         conn.commit()
         conn.close()
@@ -1589,7 +1696,7 @@ def remove_channel_command(message):
         keyboard.add(
             types.InlineKeyboardButton(
                 f"📺 {safe_name}",
-                callback_data=f"remove_channel_{ch['channel_link']}"
+                callback_data=f"remove_channel_{ch['channel_id']}"
             )
         )
 
@@ -1610,18 +1717,18 @@ def remove_channel_callback(call):
         return
 
     try:
-        channel_link = call.data.replace('remove_channel_', '')
+        channel_id = call.data.replace('remove_channel_', '')
 
         # Удаляем из списка
         global REQUIRED_CHANNELS
-        channel_to_remove = next((ch for ch in REQUIRED_CHANNELS if ch['channel_link'] == channel_link), None)
-        REQUIRED_CHANNELS = [ch for ch in REQUIRED_CHANNELS if ch['channel_link'] != channel_link]
+        channel_to_remove = next((ch for ch in REQUIRED_CHANNELS if ch['channel_id'] == channel_id), None)
+        REQUIRED_CHANNELS = [ch for ch in REQUIRED_CHANNELS if ch['channel_id'] != channel_id]
 
         if channel_to_remove:
             # Удаляем из базы данных
             conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM channels WHERE channel_link = ?", (channel_link,))
+            cursor.execute("DELETE FROM channels WHERE channel_id = ?", (channel_id,))
             conn.commit()
             conn.close()
 
@@ -1631,7 +1738,7 @@ def remove_channel_callback(call):
 
 <b>📺 ИНФОРМАЦИЯ:</b>
 Название: {safe_name}
-Ссылка: {channel_link}
+Ссылка: {channel_to_remove['channel_link']}
 Тип: обязательный
 
 <i>Канал удален из списка обязательных.</i>""",
@@ -2120,7 +2227,7 @@ if __name__ == "__main__":
         print(f"🎁 Ежед. бонус: {get_setting('daily_bonus', DAILY_BONUS_AMOUNT)} {CURRENCY}")
         print(f"📺 Каналов: {len(REQUIRED_CHANNELS)} обязательных")
         print(f"👑 Админов: {len(ADMIN_IDS)}")
-        print(f"👨‍💻 Разработчик: {DEVELOPER_CONTACT}")
+        print(f"👨‍💻 Разработчик: @{DEVELOPER_USERNAME}")
 
         set_webhook()
 
