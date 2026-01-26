@@ -445,85 +445,134 @@ def register_user(user_id, username, full_name, referrer_id=None):
         ''', (user_id, 0, 'registration', 'Регистрация в боте'))
 
         conn.commit()
-        conn.close()
         
-        # Проверяем подписки и начисляем реферальный бонус если нужно
+        # ЗАПУСКАЕМ ОТЛОЖЕННУЮ ПРОВЕРКУ РЕФЕРАЛЬНОГО БОНУСА
         if referrer_id:
-            check_and_reward_referrer(user_id)
+            # Запускаем проверку через 10 секунд (пользователь успеет подписаться)
+            threading.Timer(10.0, check_and_reward_referrer, args=[user_id]).start()
     else:
-        conn.close()
+        # Если пользователь уже есть, обновляем реферера если нужно
+        if referrer_id and not user[3]:  # user[3] это referred_by
+            cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
+            conn.commit()
+            # Запускаем проверку реферального бонуса
+            threading.Timer(10.0, check_and_reward_referrer, args=[user_id]).start()
+    
+    conn.close()
 
 def check_and_reward_referrer(user_id):
     """Проверяет подписки пользователя и начисляет бонус рефереру если нужно"""
-    user_info = get_user_info(user_id)
-    if not user_info:
+    print(f"🔍 Проверка реферального бонуса для пользователя {user_id}")
+    
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+    cursor = conn.cursor()
+    
+    # Получаем информацию о пользователе и его реферере
+    cursor.execute("SELECT referred_by, username, full_name FROM users WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    
+    if not result:
+        conn.close()
+        print(f"❌ Пользователь {user_id} не найден в базе")
         return False
     
-    referrer_id = user_info.get('referred_by')
+    referrer_id = result[0]
+    username = result[1]
+    full_name = result[2]
+    
     if not referrer_id:
+        conn.close()
+        print(f"❌ У пользователя {user_id} нет реферера")
         return False
+    
+    print(f"🔍 Реферер пользователя {user_id}: {referrer_id}")
     
     # Проверяем подписки пользователя
     all_subscribed, not_subscribed = check_all_subscriptions(user_id)
     
-    if all_subscribed:
-        conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
-        cursor = conn.cursor()
-        
-        # Проверяем, был ли уже начислен бонус за этого реферала
-        cursor.execute('''
-            SELECT COUNT(*) FROM transactions 
-            WHERE user_id = ? AND type = 'referral_bonus' 
-            AND description LIKE ?
-        ''', (referrer_id, f'%приглашение пользователя {user_id}%'))
-        
-        already_rewarded = cursor.fetchone()[0] > 0
-        
-        if not already_rewarded:
-            # Начисляем бонус рефереру
-            referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-            
-            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (referral_reward, referrer_id))
-            
-            cursor.execute('''
-                INSERT INTO transactions (user_id, amount, type, description)
-                VALUES (?, ?, ?, ?)
-            ''', (referrer_id, referral_reward, 'referral_bonus', f'Награда за приглашение пользователя {user_id}'))
-            
-            conn.commit()
-            
-            # Уведомляем реферера
-            try:
-                referrer_info = get_user_info(referrer_id)
-                if referrer_info:
-                    current_balance = referrer_info['balance'] + referral_reward
-                    
-                    bot.send_message(
-                        referrer_id,
-                        f"""🎉 <b>НОВЫЙ РЕФЕРАЛ!</b>
+    if not all_subscribed:
+        conn.close()
+        print(f"❌ Пользователь {user_id} не подписан на все каналы")
+        return False
+    
+    print(f"✅ Пользователь {user_id} подписан на все каналы")
+    
+    # Проверяем, был ли уже начислен бонус за этого реферала
+    cursor.execute('''
+        SELECT COUNT(*) FROM transactions 
+        WHERE user_id = ? AND type = 'referral_bonus' 
+        AND description LIKE ?
+    ''', (referrer_id, f'%приглашение пользователя {user_id}%'))
+    
+    already_rewarded = cursor.fetchone()[0] > 0
+    
+    if already_rewarded:
+        conn.close()
+        print(f"⚠️ Бонус за пользователя {user_id} уже был начислен рефереру {referrer_id}")
+        return False
+    
+    # Начисляем бонус рефереру
+    referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+    
+    print(f"💰 Начисляем {referral_reward} {CURRENCY} рефереру {referrer_id} за пользователя {user_id}")
+    
+    cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (referral_reward, referrer_id))
+    
+    cursor.execute('''
+        INSERT INTO transactions (user_id, amount, type, description)
+        VALUES (?, ?, ?, ?)
+    ''', (referrer_id, referral_reward, 'referral_bonus', f'Награда за приглашение пользователя {user_id}'))
+    
+    conn.commit()
+    
+    # Получаем новый баланс реферера
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (referrer_id,))
+    new_balance_result = cursor.fetchone()
+    new_balance = new_balance_result[0] if new_balance_result else 0
+    
+    conn.close()
+    
+    # Уведомляем реферера
+    try:
+        bot.send_message(
+            referrer_id,
+            f"""🎉 <b>НОВЫЙ РЕФЕРАЛ!</b>
 
-По вашей ссылке зарегистрировался новый пользователь!
+По вашей ссылке зарегистрировался новый пользователь и подписался на все каналы!
 
 <b>Детали:</b>
-👤 Пользователь: {user_info['full_name']}
+👤 Пользователь: {full_name}
 💰 Начислено: {format_usdt(referral_reward)}
-📈 Ваш баланс: {format_usdt(current_balance)}
+📈 Ваш баланс: {format_usdt(new_balance)}
 
 Продолжайте приглашать друзей для увеличения заработка! 💸🚀""",
-                        parse_mode='HTML'
-                    )
-            except Exception as e:
-                print(f"Не удалось отправить уведомление рефереру {referrer_id}: {e}")
-            
-            conn.close()
-            return True
-        
-        conn.close()
+            parse_mode='HTML'
+        )
+        print(f"✅ Уведомление отправлено рефереру {referrer_id}")
+    except Exception as e:
+        print(f"❌ Не удалось отправить уведомление рефереру {referrer_id}: {e}")
     
-    return False
+    # Уведомляем пользователя
+    try:
+        bot.send_message(
+            user_id,
+            f"""✅ <b>ВЫ ПОДПИСАЛИСЬ НА ВСЕ КАНАЛЫ!</b>
+
+Ваш реферер получил вознаграждение за вашу регистрацию: {format_usdt(referral_reward)}
+
+Спасибо за участие в программе! 🎉""",
+            parse_mode='HTML'
+        )
+        print(f"✅ Уведомление отправлено пользователю {user_id}")
+    except Exception as e:
+        print(f"❌ Не удалось отправить уведомление пользователю {user_id}: {e}")
+    
+    return True
 
 def check_all_users_subscriptions():
     """Проверяет подписки всех пользователей и начисляет реферальные бонусы"""
+    print("🔍 Запускаю проверку всех реферальных бонусов...")
+    
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     
@@ -533,6 +582,8 @@ def check_all_users_subscriptions():
     ''')
     users_with_referrers = cursor.fetchall()
     conn.close()
+    
+    print(f"🔍 Найдено {len(users_with_referrers)} пользователей с реферерами")
     
     rewarded_count = 0
     for user_id, referrer_id in users_with_referrers:
@@ -883,12 +934,6 @@ def start_command(message):
     # Регистрируем пользователя
     register_user(user_id, username, full_name, referrer_id)
 
-    # Проверяем подписки сразу после регистрации
-    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
-    if all_subscribed and referrer_id:
-        # Если сразу подписан на все каналы - начисляем бонус
-        check_and_reward_referrer(user_id)
-
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
     welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
@@ -934,18 +979,32 @@ def check_my_ref_command(message):
             )
             return
     
+    # Запускаем проверку реферального бонуса
     result = check_and_reward_referrer(user_id)
     
     if result:
         bot.send_message(
             message.chat.id,
-            "✅ Реферальный бонус начислен! Проверьте ваш баланс.",
+            """✅ <b>ПРОВЕРКА ЗАВЕРШЕНА</b>
+
+✅ <b>Реферальный бонус начислен вашему рефереру!</b>
+
+Если вы подписались на все каналы, ваш реферер получил вознаграждение.""",
             parse_mode='HTML'
         )
     else:
         bot.send_message(
             message.chat.id,
-            "ℹ️ Реферальный бонус уже был начислен или вы не подписаны на все каналы.",
+            """ℹ️ <b>ПРОВЕРКА ЗАВЕРШЕНА</b>
+
+ℹ️ <b>Реферальный бонус:</b>
+
+Возможные причины:
+1. Реферальный бонус уже был начислен ранее
+2. Вы не подписаны на все обязательные каналы
+3. У вас нет реферера
+
+Подпишитесь на все каналы и попробуйте снова.""",
             parse_mode='HTML'
         )
 
