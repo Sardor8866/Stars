@@ -453,6 +453,24 @@ def register_user(user_id, username, full_name, referrer_id=None):
                 INSERT INTO transactions (user_id, amount, type, description)
                 VALUES (?, ?, ?, ?)
             ''', (referrer_id, referral_reward, 'referral_bonus', f'Награда за приглашение пользователя {user_id}'))
+            
+            # Уведомляем реферера
+            try:
+                bot.send_message(
+                    referrer_id,
+                    f"""🎉 <b>НОВЫЙ РЕФЕРАЛ!</b>
+
+✅ <b>Вам начислена награда за приглашение!</b>
+
+<b>📊 Детали:</b>
+Приглашён: {safe_full_name}
+Начислено: +{format_usdt(referral_reward)}
+
+<b>💰 Приглашайте больше друзей и зарабатывайте!</b>""",
+                    parse_mode='HTML'
+                )
+            except:
+                pass
 
         conn.commit()
 
