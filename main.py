@@ -444,9 +444,76 @@ def register_user(user_id, username, full_name, referrer_id=None):
             VALUES (?, ?, ?, ?)
         ''', (user_id, 0, 'registration', 'Регистрация в боте'))
 
-        # Если есть реферер, начисляем ему награду
+        # ЕСЛИ ЕСТЬ РЕФЕРЕР, СОХРАНЯЕМ ЕГО ID (НО НЕ НАЧИСЛЯЕМ СРАЗУ)
         if referrer_id:
+            # Только сохраняем реферера, НЕ начисляем бонус сейчас
+            # Бонус будет начислен позже, когда реферал подпишется на все каналы
+            pass
+
+        conn.commit()
+        
+        # Проверяем подписки нового пользователя
+        if REQUIRED_CHANNELS:
+            all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+            if all_subscribed and referrer_id:
+                # Если пользователь сразу подписан на все каналы И у него есть реферер
+                # Начисляем бонус рефереру
+                referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+                
+                cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (referral_reward, referrer_id))
+                
+                cursor.execute('''
+                    INSERT INTO transactions (user_id, amount, type, description)
+                    VALUES (?, ?, ?, ?)
+                ''', (referrer_id, referral_reward, 'referral_bonus', f'Награда за приглашение пользователя {user_id}'))
+                
+                conn.commit()
+                
+                # Уведомляем реферера
+                try:
+                    bot.send_message(
+                        referrer_id,
+                        f"""🎉 <b>По вашей ссылке зарегистрировался новый пользователь!</b>
+
+На ваш баланс зачислено {format_usdt(referral_reward)}""",
+                        parse_mode='HTML'
+                    )
+                except Exception as e:
+                    print(f"Не удалось отправить уведомление рефереру {referrer_id}: {e}")
+
+    conn.close()
+
+def check_and_reward_referrer(user_id):
+    """Проверяет подписки пользователя и начисляет бонус рефереру если нужно"""
+    user_info = get_user_info(user_id)
+    if not user_info:
+        return
+    
+    referrer_id = user_info.get('referred_by')
+    if not referrer_id:
+        return
+    
+    # Проверяем подписки пользователя
+    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+    
+    if all_subscribed:
+        # Проверяем, не был ли уже начислен бонус
+        conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+        cursor = conn.cursor()
+        
+        # Проверяем, был ли уже начислен бонус за этого реферала
+        cursor.execute('''
+            SELECT COUNT(*) FROM transactions 
+            WHERE user_id = ? AND type = 'referral_bonus' 
+            AND description LIKE ?
+        ''', (referrer_id, f'%приглашение пользователя {user_id}%'))
+        
+        already_rewarded = cursor.fetchone()[0] > 0
+        
+        if not already_rewarded:
+            # Начисляем бонус рефереру
             referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+            
             cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (referral_reward, referrer_id))
             
             cursor.execute('''
@@ -454,27 +521,21 @@ def register_user(user_id, username, full_name, referrer_id=None):
                 VALUES (?, ?, ?, ?)
             ''', (referrer_id, referral_reward, 'referral_bonus', f'Награда за приглашение пользователя {user_id}'))
             
+            conn.commit()
+            
             # Уведомляем реферера
             try:
                 bot.send_message(
                     referrer_id,
-                    f"""🎉 <b>НОВЫЙ РЕФЕРАЛ!</b>
+                    f"""🎉 <b>По вашей ссылке зарегистрировался новый пользователь!</b>
 
-✅ <b>Вам начислена награда за приглашение!</b>
-
-<b>📊 Детали:</b>
-Приглашён: {safe_full_name}
-Начислено: +{format_usdt(referral_reward)}
-
-<b>💰 Приглашайте больше друзей и зарабатывайте!</b>""",
+На ваш баланс зачислено {format_usdt(referral_reward)}""",
                     parse_mode='HTML'
                 )
-            except:
-                pass
-
-        conn.commit()
-
-    conn.close()
+            except Exception as e:
+                print(f"Не удалось отправить уведомление рефереру {referrer_id}: {e}")
+        
+        conn.close()
 
 def get_user_info(user_id):
     """Получение информации о пользователе"""
@@ -1451,6 +1512,9 @@ def check_subscription_after_callback(call):
         
         if not user:
             register_user(user_id, username, full_name, None)
+        else:
+            # Если пользователь уже зарегистрирован, проверяем и начисляем реферальный бонус
+            check_and_reward_referrer(user_id)
 
         # Показываем главное меню
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
