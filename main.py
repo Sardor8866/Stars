@@ -734,7 +734,7 @@ def check_subscription_after_callback(call):
         except:
             pass
 
-@bot.message_handler(func=lambda message: message.text == "Пробиль")
+@bot.message_handler(func=lambda message: message.text == "👤Профиль")
 def profile_command(message):
     # Проверяем подписку на каналы
     if REQUIRED_CHANNELS:
@@ -755,22 +755,20 @@ def profile_command(message):
         total_withdrawn = get_user_total_withdrawn(message.from_user.id)
         ref_count = user_info['referrals_count']
         
-        # ТОЧНЫЙ ТЕКСТ ПРОФИЛЯ КАК НА СКРИНЕ (без времени)
-        profile_text = f"""<b>Ваш профиль:</b>
+        # ИСПРАВЛЕННАЯ СТРОКА С <blockquote>:
+        profile_text = f"""<b>👤Ваш профиль:</b>
 
-Ваш ID: <code>{user_info['user_id']}</code>  
-Ваш баланс: {format_usdt(user_info['balance'])}
+🆔Ваш ID: <code>{user_info['user_id']}</code>  
+💰Ваш баланс: {format_usdt(user_info['balance'])}
 
-Выведено: {format_usdt(total_withdrawn)}
+<blockquote>Выведено: {format_usdt(total_withdrawn)}</blockquote>
 
-Число приглашённых рефералов: {ref_count}
-
-<b>Подаль заявку на вывод</b>"""
+<b>👥Число приглашённых рефералов: {ref_count}</b>"""
 
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(
             types.InlineKeyboardButton(
-                "💰 Вывод",
+                "✨Подать заявку на вывод",
                 callback_data="go_to_withdraw"
             )
         )
@@ -796,7 +794,7 @@ def project_info_command(message):
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         types.InlineKeyboardButton("🏆 Топ", callback_data="show_top"),
-        types.InlineKeyboardButton("👨‍💻 Разработчик", url=f"https://t.me/{DEVELOPER_CONTACT.replace('@', '')}")
+        types.InlineKeyboardButton("👨‍💻 Разработчик", url=f"https://t.me/{kenzooov.replace('@', '')}")
     )
 
     bot.send_message(
