@@ -39,7 +39,8 @@ ADMIN_IDS = [8118184388]
 REQUIRED_CHANNELS = []  # Каналы с обязательной подпиской
 
 # Хранение капчи
-user_captcha = {}  # {user_id: {'correct_emoji': emoji, 'attempts': 0, 'solved': False}}
+user_captcha = {}  # {user_id: {'correct_emoji': emoji, 'attempts': 0, 'solved': False, 'last_solved': timestamp}}
+user_last_check = {}  # {user_id: timestamp} - для отслеживания 24 часов
 
 # Список эмоджи для капчи
 EMOJI_LIST = ['😀', '😂', '😍', '😎', '🤔', '😴', '🥳', '🤯', '😱', '🤮', 
@@ -115,9 +116,29 @@ def check_captcha_required(user_id):
     if user_id in ADMIN_IDS:
         return False
     
-    # Если пользователя нет в словаре капчи или капча не решена
-    if user_id not in user_captcha or not user_captcha[user_id].get('solved', False):
+    current_time = datetime.now()
+    
+    # Если пользователя нет в словаре капчи
+    if user_id not in user_captcha:
         return True
+    
+    # Если капча не решена
+    if not user_captcha[user_id].get('solved', False):
+        return True
+    
+    # Проверяем, прошло ли 24 часа с последнего решения капчи
+    last_solved = user_captcha[user_id].get('last_solved')
+    if last_solved:
+        try:
+            last_solved_time = datetime.strptime(last_solved, '%Y-%m-%d %H:%M:%S.%f') if '.' in last_solved else datetime.strptime(last_solved, '%Y-%m-%d %H:%M:%S')
+            if current_time >= last_solved_time + timedelta(hours=24):
+                # Сбрасываем капчу через 24 часа
+                user_captcha[user_id]['solved'] = False
+                return True
+        except:
+            # Если ошибка парсинга времени, сбрасываем капчу
+            user_captcha[user_id]['solved'] = False
+            return True
     
     return False
 
@@ -148,7 +169,8 @@ def show_captcha(chat_id, user_id):
         'correct_index': correct_index,
         'emoji_options': emoji_options,
         'attempts': 0,
-        'solved': False
+        'solved': False,
+        'last_solved': None
     }
     
     captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
@@ -815,6 +837,7 @@ def handle_captcha_callback(call):
     if selected_index == captcha_data['correct_index']:
         # Правильный ответ
         user_captcha[user_id]['solved'] = True
+        user_captcha[user_id]['last_solved'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
         
         try:
             bot.edit_message_text(
@@ -2398,7 +2421,7 @@ if __name__ == "__main__":
         print(f"👤 Бот: @{bot_info.username}")
         print(f"🌐 Вебхук: {WEBHOOK_URL}{WEBHOOK_PATH}")
         print(f"💵 Валюта: {CURRENCY}")
-        print(f"🔒 Капча: включена")
+        print(f"🔒 Капча: включена (каждые 24 часа)")
         print(f"💰 Мин. вывод: {get_setting('min_withdrawal', MIN_WITHDRAWAL)} {CURRENCY}")
         print(f"🎁 Награда: {get_setting('referral_reward', REFERRAL_REWARD)} {CURRENCY}")
         print(f"🎁 Ежед. бонус: {get_setting('daily_bonus', DAILY_BONUS_AMOUNT)} {CURRENCY}")
