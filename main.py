@@ -2837,7 +2837,7 @@ def profile_command(message):
         referral_link = generate_referral_link(message.from_user.id)
         username_display = f"@{user_info['username']}" if user_info['username'] else "не указан"
 
-       profile_text = f"""
+profile_text = f"""
 👤 <b>Ваш профиль:</b>
 
 <b>🆔 Ваш ID:</b> <code>{user_id}</code>
