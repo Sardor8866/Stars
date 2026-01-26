@@ -38,6 +38,9 @@ ADMIN_IDS = [8118184388]
 # Глобальные переменные для каналов
 REQUIRED_CHANNELS = []  # Каналы с обязательной подпиской
 
+# Хранение капчи
+user_captcha = {}  # {user_id: {'answer': correct_answer}}
+
 # ========== УТИЛИТЫ ==========
 def sanitize_text(text):
     """Очистка текста от проблемных символов"""
@@ -62,6 +65,36 @@ def format_usdt_short(amount):
         return f"{amount:.2f}" if amount != int(amount) else f"{int(amount)}"
     else:
         return f"{amount:.3f}"
+
+# ========== ФУНКЦИИ ДЛЯ КАПЧИ ==========
+def generate_captcha():
+    """Генерация простой математической капчи (только + и -)"""
+    operations = ['+', '-']
+    op = random.choice(operations)
+    
+    if op == '+':
+        a = random.randint(1, 20)
+        b = random.randint(1, 20)
+        answer = a + b
+    else:  # '-'
+        a = random.randint(10, 30)
+        b = random.randint(1, a-1)
+        answer = a - b
+    
+    question = f"{a}{op}{b}"
+    return question, answer
+
+def check_captcha_required(user_id):
+    """Проверка, требуется ли капча пользователю"""
+    # Пропускаем админов
+    if user_id in ADMIN_IDS:
+        return False
+    
+    # Проверяем, есть ли уже решенная капча
+    if user_id in user_captcha and user_captcha[user_id].get('solved', False):
+        return False
+    
+    return True
 
 # ========== ФУНКЦИИ ДЛЯ РАБОТЫ С КАНАЛАМИ ==========
 def check_user_subscription(user_id, channel_id):
@@ -90,6 +123,23 @@ def check_all_subscriptions(user_id):
             not_subscribed.append(channel)
 
     return all_subscribed, not_subscribed
+
+def check_access_required(user_id):
+    """Проверка всех требований для доступа"""
+    # Сначала проверяем капчу
+    if check_captcha_required(user_id):
+        return 'captcha'
+    
+    # Затем проверяем подписки
+    if not REQUIRED_CHANNELS:
+        return 'ok'
+
+    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+    
+    if all_subscribed:
+        return 'ok'
+    else:
+        return 'subscription'
 
 def check_subscription_required(user_id):
     """Проверка обязательных подписок"""
@@ -602,8 +652,26 @@ def start_command(message):
     username = sanitize_text(message.from_user.username) if message.from_user.username else ""
     full_name = sanitize_text(message.from_user.full_name) if message.from_user.full_name else f"User_{user_id}"
 
-    # Проверяем подписку на каналы перед регистрацией
-    if REQUIRED_CHANNELS:
+    # Проверяем требования для доступа
+    access_status = check_access_required(user_id)
+    
+    if access_status == 'captcha':
+        # Показываем капчу
+        question, answer = generate_captcha()
+        user_captcha[user_id] = {
+            'answer': answer,
+            'question': question,
+            'solved': False
+        }
+        
+        bot.send_message(
+            message.chat.id,
+            f"Решите капчу: {question}=?"
+        )
+        return
+    
+    elif access_status == 'subscription':
+        # Показываем каналы для подписки
         is_subscribed, subscription_data = check_subscription_required(user_id)
         if not is_subscribed:
             channels_text, keyboard = subscription_data
@@ -614,7 +682,8 @@ def start_command(message):
                 reply_markup=keyboard
             )
             return
-
+    
+    # Если дошли сюда, значит доступ разрешен
     if len(message.text.split()) > 1:
         start_param = message.text.split()[1]
         
@@ -664,43 +733,59 @@ def start_command(message):
         reply_markup=create_main_menu()
     )
 
-@bot.callback_query_handler(func=lambda call: call.data == "check_subscription_after")
-def check_subscription_after_callback(call):
-    """Проверка подписки после нажатия кнопки"""
-    user_id = call.from_user.id
-    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
-
-    if all_subscribed:
+# ========== ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ ДЛЯ ПРОВЕРКИ КАПЧИ ==========
+@bot.message_handler(func=lambda message: True, content_types=['text'])
+def handle_all_messages(message):
+    user_id = message.from_user.id
+    
+    # Пропускаем команды
+    if message.text.startswith('/'):
+        bot.process_new_messages([message])
+        return
+    
+    # Проверяем, решает ли пользователь капчу
+    if user_id in user_captcha and not user_captcha[user_id].get('solved', False):
         try:
-            bot.edit_message_text(
-                """✅ <b>ВСЕ ПОДПИСКИ АКТИВНЫ</b>
-
-✅ <b>Отлично! Вы подписаны на все каналы!</b>
-
-Теперь вы можете пользоваться ботом.""",
-                call.message.chat.id,
-                call.message.message_id,
-                parse_mode='HTML'
-            )
-        except:
-            pass
-
-        # Регистрируем пользователя если он еще не зарегистрирован
-        username = sanitize_text(call.from_user.username) if call.from_user.username else ""
-        full_name = sanitize_text(call.from_user.full_name) if call.from_user.full_name else f"User_{user_id}"
-        
-        conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-        user = cursor.fetchone()
-        conn.close()
-        
-        if not user:
-            register_user(user_id, username, full_name, None)
-
-        # Показываем главное меню
-        referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-        welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
+            user_answer = int(message.text.strip())
+            correct_answer = user_captcha[user_id]['answer']
+            
+            if user_answer == correct_answer:
+                # Капча решена правильно
+                user_captcha[user_id]['solved'] = True
+                
+                # Проверяем подписки
+                if REQUIRED_CHANNELS:
+                    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+                    if not all_subscribed:
+                        # Показываем каналы для подписки
+                        is_subscribed, subscription_data = check_subscription_required(user_id)
+                        if not is_subscribed:
+                            channels_text, keyboard = subscription_data
+                            bot.send_message(
+                                message.chat.id,
+                                channels_text,
+                                parse_mode='HTML',
+                                reply_markup=keyboard
+                            )
+                            return
+                
+                # Если подписки не требуются или уже подписан
+                # Регистрируем пользователя если еще не зарегистрирован
+                username = sanitize_text(message.from_user.username) if message.from_user.username else ""
+                full_name = sanitize_text(message.from_user.full_name) if message.from_user.full_name else f"User_{user_id}"
+                
+                conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+                user = cursor.fetchone()
+                conn.close()
+                
+                if not user:
+                    register_user(user_id, username, full_name, None)
+                
+                # Показываем главное меню
+                referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+                welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
 
 ✨ <b>Добро пожаловать, {full_name}!</b>
 
@@ -713,66 +798,67 @@ def check_subscription_after_callback(call):
 <b>👇 НАВИГАЦИЯ:</b>
 Используйте кнопки ниже:"""
 
-        bot.send_message(
-            call.message.chat.id,
-            welcome_text,
-            parse_mode='HTML',
-            reply_markup=create_main_menu()
-        )
-    else:
-        channels_text = """❌ <b>ОБЯЗАТЕЛЬНЫЕ ПОДПИСКИ</b>
-
-❌ <b>Вы еще не подписались на все каналы!</b>
-
-<b>Осталось подписаться:</b>\n\n"""
-
-        keyboard = types.InlineKeyboardMarkup()
-
-        # Добавляем только обязательные каналы
-        for channel in REQUIRED_CHANNELS:
-            safe_name = sanitize_text(channel['channel_name'])
-            channels_text += f"• {safe_name} 📌\n"
-
-            if 'channel_username' in channel and channel['channel_username']:
-                username = channel['channel_username'].replace('@', '')
-                if username:
-                    keyboard.add(
-                        types.InlineKeyboardButton(
-                            f"📺 {safe_name}",
-                            url=f"https://t.me/{username}"
-                        )
-                    )
-            elif 'channel_link' in channel and channel['channel_link']:
-                keyboard.add(
-                    types.InlineKeyboardButton(
-                        f"📺 {safe_name}",
-                        url=channel['channel_link']
-                    )
+                bot.send_message(
+                    message.chat.id,
+                    welcome_text,
+                    parse_mode='HTML',
+                    reply_markup=create_main_menu()
                 )
-
-        channels_text += """\n✅ <b>После подписки нажмите кнопку ниже</b>"""
-
-        keyboard.add(
-            types.InlineKeyboardButton("🔄 Проверить", callback_data="check_subscription_after")
-        )
-
-        try:
-            bot.edit_message_text(
-                channels_text,
-                call.message.chat.id,
-                call.message.message_id,
-                parse_mode='HTML',
-                reply_markup=keyboard
+            else:
+                # Неправильный ответ - новый пример
+                question, answer = generate_captcha()
+                user_captcha[user_id] = {
+                    'answer': answer,
+                    'question': question,
+                    'solved': False
+                }
+                
+                bot.send_message(
+                    message.chat.id,
+                    f"Решите капчу: {question}=?"
+                )
+        except ValueError:
+            # Если введено не число
+            question, answer = generate_captcha()
+            user_captcha[user_id] = {
+                'answer': answer,
+                'question': question,
+                'solved': False
+            }
+            
+            bot.send_message(
+                message.chat.id,
+                f"Решите капчу: {question}=?"
             )
-        except:
-            pass
+        return
+    
+    # Если не капча, обрабатываем как обычно
+    bot.process_new_messages([message])
 
+# ========== ОБРАБОТЧИКИ КНОПОК ГЛАВНОГО МЕНЮ ==========
 @bot.message_handler(func=lambda message: message.text == "👤Профиль")
 def profile_command(message):
     user_id = message.from_user.id
     
-    # Проверяем подписку на каналы
-    if REQUIRED_CHANNELS:
+    # Проверяем требования для доступа
+    access_status = check_access_required(user_id)
+    
+    if access_status == 'captcha':
+        # Показываем капчу
+        question, answer = generate_captcha()
+        user_captcha[user_id] = {
+            'answer': answer,
+            'question': question,
+            'solved': False
+        }
+        
+        bot.send_message(
+            message.chat.id,
+            f"Решите капчу: {question}=?"
+        )
+        return
+    elif access_status == 'subscription':
+        # Показываем каналы для подписки
         is_subscribed, subscription_data = check_subscription_required(user_id)
         if not is_subscribed:
             channels_text, keyboard = subscription_data
@@ -825,8 +911,25 @@ def project_info_command(message):
     """Информация о проекте как на скрине с кнопками"""
     user_id = message.from_user.id
     
-    # Проверяем подписку на каналы
-    if REQUIRED_CHANNELS:
+    # Проверяем требования для доступа
+    access_status = check_access_required(user_id)
+    
+    if access_status == 'captcha':
+        # Показываем капчу
+        question, answer = generate_captcha()
+        user_captcha[user_id] = {
+            'answer': answer,
+            'question': question,
+            'solved': False
+        }
+        
+        bot.send_message(
+            message.chat.id,
+            f"Решите капчу: {question}=?"
+        )
+        return
+    elif access_status == 'subscription':
+        # Показываем каналы для подписки
         is_subscribed, subscription_data = check_subscription_required(user_id)
         if not is_subscribed:
             channels_text, keyboard = subscription_data
@@ -914,8 +1017,25 @@ def show_top_callback(call):
 def invite_command(message):
     user_id = message.from_user.id
     
-    # Проверяем подписку на каналы
-    if REQUIRED_CHANNELS:
+    # Проверяем требования для доступа
+    access_status = check_access_required(user_id)
+    
+    if access_status == 'captcha':
+        # Показываем капчу
+        question, answer = generate_captcha()
+        user_captcha[user_id] = {
+            'answer': answer,
+            'question': question,
+            'solved': False
+        }
+        
+        bot.send_message(
+            message.chat.id,
+            f"Решите капчу: {question}=?"
+        )
+        return
+    elif access_status == 'subscription':
+        # Показываем каналы для подписки
         is_subscribed, subscription_data = check_subscription_required(user_id)
         if not is_subscribed:
             channels_text, keyboard = subscription_data
@@ -956,6 +1076,122 @@ def invite_command(message):
             parse_mode='HTML'
         )
 
+@bot.message_handler(func=lambda message: message.text == "🎁Ежедневный бонус")
+def daily_bonus_command(message):
+    """Обработчик ежедневного бонуса"""
+    user_id = message.from_user.id
+    
+    # Проверяем требования для доступа
+    access_status = check_access_required(user_id)
+    
+    if access_status == 'captcha':
+        # Показываем капчу
+        question, answer = generate_captcha()
+        user_captcha[user_id] = {
+            'answer': answer,
+            'question': question,
+            'solved': False
+        }
+        
+        bot.send_message(
+            message.chat.id,
+            f"Решите капчу: {question}=?"
+        )
+        return
+    elif access_status == 'subscription':
+        # Показываем каналы для подписки
+        is_subscribed, subscription_data = check_subscription_required(user_id)
+        if not is_subscribed:
+            channels_text, keyboard = subscription_data
+            bot.send_message(
+                message.chat.id,
+                channels_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            return
+    
+    # Проверяем, может ли пользователь получить бонус
+    can_claim, remaining_time = can_claim_daily_bonus(user_id)
+    
+    daily_bonus_amount = get_setting('daily_bonus', DAILY_BONUS_AMOUNT)
+    
+    if can_claim:
+        # Выдаем бонус
+        bonus_amount, new_balance = claim_daily_bonus(user_id)
+        
+        bonus_text = f"""<b>🎁 Вам был начислен ежедневный бонус в размере 0.1 USDT!</b>"""
+    else:
+        # Показываем оставшееся время
+        bonus_text = f"""<b>⏳ Вы уже получали бонус сегодня</b>"""
+    
+    bot.send_message(
+        message.chat.id,
+        bonus_text,
+        parse_mode='HTML',
+        reply_markup=create_main_menu()
+    )
+
+@bot.message_handler(func=lambda message: message.text == "🆘Тех. поддержка")
+def support_command(message):
+    """🆘Техническая поддержка"""
+    user_id = message.from_user.id
+    
+    # Проверяем требования для доступа
+    access_status = check_access_required(user_id)
+    
+    if access_status == 'captcha':
+        # Показываем капчу
+        question, answer = generate_captcha()
+        user_captcha[user_id] = {
+            'answer': answer,
+            'question': question,
+            'solved': False
+        }
+        
+        bot.send_message(
+            message.chat.id,
+            f"Решите капчу: {question}=?"
+        )
+        return
+    elif access_status == 'subscription':
+        # Показываем каналы для подписки
+        is_subscribed, subscription_data = check_subscription_required(user_id)
+        if not is_subscribed:
+            channels_text, keyboard = subscription_data
+            bot.send_message(
+                message.chat.id,
+                channels_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            return
+    
+    support_text = f"""<b>Тех. поддержка</b>
+
+<b>👨‍💻 Техническая поддержка</b>
+
+<b>📞 Связь:</b>
+Для связи с поддержкой используйте:
+• @{DEVELOPER_USERNAME}
+• Отправить сообщение администратору
+
+<b>⏱️ Время ответа:</b>
+Обычно в течение 24 часов
+
+<b>⚠️ Проблемы:</b>
+• Не работает бот
+• Не приходят бонусы
+• Проблемы с выводом
+• Другие вопросы"""
+
+    bot.send_message(
+        message.chat.id,
+        support_text,
+        parse_mode='HTML'
+    )
+
+# ========== ФУНКЦИИ ВЫВОДА ==========
 def withdrawal_command(message):
     user_id = message.from_user.id
     user_info = get_user_info(user_id)
@@ -1202,86 +1438,124 @@ Username: <b>@{username}</b>
             reply_markup=create_main_menu()
         )
 
-@bot.message_handler(func=lambda message: message.text == "🆘Тех. поддержка")
-def support_command(message):
-    """🆘Техническая поддержка"""
-    user_id = message.from_user.id
-    
-    # Проверяем подписку на каналы
-    if REQUIRED_CHANNELS:
-        is_subscribed, subscription_data = check_subscription_required(user_id)
-        if not is_subscribed:
-            channels_text, keyboard = subscription_data
+# ========== CALLBACK ДЛЯ ПРОВЕРКИ ПОДПИСКИ ==========
+@bot.callback_query_handler(func=lambda call: call.data == "check_subscription_after")
+def check_subscription_after_callback(call):
+    """Проверка подписки после нажатия кнопки"""
+    user_id = call.from_user.id
+    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+
+    if all_subscribed:
+        try:
+            bot.edit_message_text(
+                """✅ <b>ВСЕ ПОДПИСКИ АКТИВНЫ</b>
+
+✅ <b>Отлично! Вы подписаны на все каналы!</b>
+
+Теперь вы можете пользоваться ботом.""",
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode='HTML'
+            )
+        except:
+            pass
+
+        # Проверяем капчу
+        if check_captcha_required(user_id):
+            question, answer = generate_captcha()
+            user_captcha[user_id] = {
+                'answer': answer,
+                'question': question,
+                'solved': False
+            }
+            
             bot.send_message(
-                message.chat.id,
-                channels_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
+                call.message.chat.id,
+                f"Решите капчу: {question}=?"
             )
             return
-    
-    support_text = f"""<b>Тех. поддержка</b>
 
-<b>👨‍💻 Техническая поддержка</b>
-
-<b>📞 Связь:</b>
-Для связи с поддержкой используйте:
-• @{DEVELOPER_USERNAME}
-• Отправить сообщение администратору
-
-<b>⏱️ Время ответа:</b>
-Обычно в течение 24 часов
-
-<b>⚠️ Проблемы:</b>
-• Не работает бот
-• Не приходят бонусы
-• Проблемы с выводом
-• Другие вопросы"""
-
-    bot.send_message(
-        message.chat.id,
-        support_text,
-        parse_mode='HTML'
-    )
-
-@bot.message_handler(func=lambda message: message.text == "🎁Ежедневный бонус")
-def daily_bonus_command(message):
-    """Обработчик ежедневного бонуса"""
-    user_id = message.from_user.id
-    
-    # Проверяем подписку на каналы
-    if REQUIRED_CHANNELS:
-        is_subscribed, subscription_data = check_subscription_required(user_id)
-        if not is_subscribed:
-            channels_text, keyboard = subscription_data
-            bot.send_message(
-                message.chat.id,
-                channels_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-            return
-    
-    # Проверяем, может ли пользователь получить бонус
-    can_claim, remaining_time = can_claim_daily_bonus(user_id)
-    
-    daily_bonus_amount = get_setting('daily_bonus', DAILY_BONUS_AMOUNT)
-    
-    if can_claim:
-        # Выдаем бонус
-        bonus_amount, new_balance = claim_daily_bonus(user_id)
+        # Регистрируем пользователя если он еще не зарегистрирован
+        username = sanitize_text(call.from_user.username) if call.from_user.username else ""
+        full_name = sanitize_text(call.from_user.full_name) if call.from_user.full_name else f"User_{user_id}"
         
-        bonus_text = f"""<b>🎁 Вам был начислен ежедневный бонус в размере 0.1 USDT!</b>"""
+        conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            register_user(user_id, username, full_name, None)
+
+        # Показываем главное меню
+        referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+        welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
+
+✨ <b>Добро пожаловать, {full_name}!</b>
+
+За каждого приглашенного друга: {format_usdt(referral_reward)}
+
+Средства зачисляются автоматически.
+
+Приглашай друзей и зарабатывай!
+
+<b>👇 НАВИГАЦИЯ:</b>
+Используйте кнопки ниже:"""
+
+        bot.send_message(
+            call.message.chat.id,
+            welcome_text,
+            parse_mode='HTML',
+            reply_markup=create_main_menu()
+        )
     else:
-        # Показываем оставшееся время
-        bonus_text = f"""<b>⏳ Вы уже получали бонус сегодня</b>"""
-    
-    bot.send_message(
-        message.chat.id,
-        bonus_text,
-        parse_mode='HTML',
-        reply_markup=create_main_menu()
-    )
+        channels_text = """❌ <b>ОБЯЗАТЕЛЬНЫЕ ПОДПИСКИ</b>
+
+❌ <b>Вы еще не подписались на все каналы!</b>
+
+<b>Осталось подписаться:</b>\n\n"""
+
+        keyboard = types.InlineKeyboardMarkup()
+
+        # Добавляем только обязательные каналы
+        for channel in REQUIRED_CHANNELS:
+            safe_name = sanitize_text(channel['channel_name'])
+            channels_text += f"• {safe_name} 📌\n"
+
+            if 'channel_username' in channel and channel['channel_username']:
+                username = channel['channel_username'].replace('@', '')
+                if username:
+                    keyboard.add(
+                        types.InlineKeyboardButton(
+                            f"📺 {safe_name}",
+                            url=f"https://t.me/{username}"
+                        )
+                    )
+            elif 'channel_link' in channel and channel['channel_link']:
+                keyboard.add(
+                    types.InlineKeyboardButton(
+                        f"📺 {safe_name}",
+                        url=channel['channel_link']
+                    )
+                )
+
+        channels_text += """\n✅ <b>После подписки нажмите кнопку ниже</b>"""
+
+        keyboard.add(
+            types.InlineKeyboardButton("🔄 Проверить", callback_data="check_subscription_after")
+        )
+
+        try:
+            bot.edit_message_text(
+                channels_text,
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        except:
+            pass
 
 # ========== АДМИН ПАНЕЛЬ ==========
 @bot.message_handler(commands=['admin'])
@@ -1295,7 +1569,7 @@ def admin_command(message):
 
 <b>Добро пожаловать в панель управления!</b>
 
-<b>Выберите действие:</b>
+<b>Выберите действия:</b>
 /statistics - 📊 Статистика бота
 /mailing - 📢 Рассылка всем
 /addbalance - 💵 Добавить баланс
@@ -2190,7 +2464,7 @@ def set_webhook():
 # ========== ЗАПУСК ==========
 if __name__ == "__main__":
     print("=" * 50)
-    print("🤖 USDT РЕФЕРАЛЬНЫЙ БОТ (ВЕБХУКИ)")
+    print("🤖 USDT РЕФЕРАЛЬНЫЙ БОТ С КАПЧЕЙ")
     print("=" * 50)
 
     init_db()
@@ -2201,6 +2475,7 @@ if __name__ == "__main__":
         print(f"👤 Бот: @{bot_info.username}")
         print(f"🌐 Вебхук: {WEBHOOK_URL}{WEBHOOK_PATH}")
         print(f"💵 Валюта: {CURRENCY}")
+        print(f"🔒 Капча: включена (только + и -)")
         print(f"💰 Мин. вывод: {get_setting('min_withdrawal', MIN_WITHDRAWAL)} {CURRENCY}")
         print(f"🎁 Награда: {get_setting('referral_reward', REFERRAL_REWARD)} {CURRENCY}")
         print(f"🎁 Ежед. бонус: {get_setting('daily_bonus', DAILY_BONUS_AMOUNT)} {CURRENCY}")
