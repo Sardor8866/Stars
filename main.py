@@ -2837,27 +2837,16 @@ def profile_command(message):
         referral_link = generate_referral_link(message.from_user.id)
         username_display = f"@{user_info['username']}" if user_info['username'] else "не указан"
 
-        profile_text = f"""═══════════════════════════
-👤 <b>ВАШ ПРОФИЛЬ</b> 👤
-═══════════════════════════
+       profile_text = f"""
+👤 <b>Ваш профиль:</b>
 
-<blockquote>[ ] Ваш ID: {user_info['user_id']}
-[ ] Ваш баланс: {format_usdt(user_info['balance'])}</blockquote>
+<b>🆔 Ваш ID:</b> <code>{user_id}</code>
+<b>💰 Баланс:</b> <b>{balance} USDT</b>
+<b>📤 Выведено:</b> <b>{withdrawn} USDT</b>
+<b>👥 Приглашено друзей:</b> <b>{ref_count} человек</b>
 
-<b>💰 ВЫВОД:</b>
-<blockquote>Выведено: {format_usdt(total_withdrawn)}</blockquote>
-
-<b>📊 РЕФЕРАЛЬНАЯ СТАТИСТИКА:</b>
-<blockquote>Число приглашённых рефералов: {user_info['referrals_count']}
-Награда за каждого: {format_usdt(referral_reward)}</blockquote>
-
-<b>🔗 РЕФЕРАЛЬНАЯ ССЫЛКА:</b>
-<blockquote><code>{referral_link}</code></blockquote>
-
-<blockquote>За каждого приглашенного друга ты получишь {format_usdt(referral_reward)}
-После приглашения, средства будут автоматически зачислены на твой баланс.</blockquote>
-
-<blockquote>🎯 <b>Приглашай друзей и поднимай легкие $$$ на свой баланс!</b></blockquote>"""
+<b>━━━━━━━━━━━━━━━━━━━━</b>
+"""
 
         bot.send_message(
             message.chat.id,
