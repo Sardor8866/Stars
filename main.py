@@ -122,13 +122,11 @@ def check_subscription_required(user_id):
         # Формируем сообщение с ВСЕМИ каналами и ссылками
         all_items = get_all_items_for_user()
 
-        channels_text = """═══════════════════════════
-✨ <b>ПОДПИШИТЕСЬ НА КАНАЛЫ</b> ✨
-═══════════════════════════
+        channels_text = """<b>📺 ПОДПИСКИ</b>
 
-<blockquote>Для доступа к боту необходимо подписаться на каналы ниже:</blockquote>
+Для доступа к боту подпишитесь на каналы ниже:
 
-<b>🔐 ОБЯЗАТЕЛЬНЫЕ КАНАЛЫ (проверяются):</b>\n"""
+<b>🔐 ОБЯЗАТЕЛЬНЫЕ:</b>\n"""
 
         # Показываем сначала обязательные каналы
         for channel in REQUIRED_CHANNELS:
@@ -137,12 +135,12 @@ def check_subscription_required(user_id):
 
         # Затем показываем простые ссылки
         if SIMPLE_LINKS:
-            channels_text += "\n<b>🔗 РЕКОМЕНДУЕМ ПОДПИСАТЬСЯ:</b>\n"
+            channels_text += "\n<b>🔗 РЕКОМЕНДУЕМ:</b>\n"
             for link_item in SIMPLE_LINKS:
                 safe_name = sanitize_text(link_item['channel_name'])
                 channels_text += f"• {safe_name} 🔗\n"
 
-        channels_text += """\n<blockquote>✅ <b>Подпишитесь на обязательные каналы (отмечены 📌) и нажмите кнопку 'Проверить подписку'</b></blockquote>"""
+        channels_text += """\n✅ <b>Подпишитесь и нажмите 'Проверить'</b>"""
 
         keyboard = types.InlineKeyboardMarkup()
 
@@ -321,7 +319,7 @@ def activate_check(check_code, user_id):
     conn.commit()
     conn.close()
 
-    return True, f"🎉 Чек успешно активирован! Получено {format_usdt(amount)}"
+    return True, f"🎉 Чек активирован! +{format_usdt(amount)}"
 
 def get_check_info(check_code):
     """Получение информации о чеке"""
@@ -584,16 +582,14 @@ def register_user(user_id, username, full_name, referrer_id=None):
             try:
                 bot.send_message(
                     referrer_id,
-                    f"""═══════════════════════════
-✨ <b>НОВЫЙ РЕФЕРАЛ</b> ✨
-═══════════════════════════
+                    f"""✨ <b>НОВЫЙ РЕФЕРАЛ</b>
 
-<blockquote>🎉 <b>Новый реферал зарегистрировался!</b></blockquote>
+🎉 <b>Новый реферал зарегистрировался!</b>
 
-<b>👤 Информация о реферале:</b>
-<blockquote>Пользователь: {safe_full_name}</blockquote>
+<b>👤 Информация:</b>
+Пользователь: {safe_full_name}
 
-<blockquote>📢 <b>Бонусы будут начислены после того, как пользователь подпишется на все обязательные каналы.</b></blockquote>""",
+<b>📢 Бонусы будут начислены после подписки на все каналы.</b>""",
                     parse_mode='HTML'
                 )
             except Exception as e:
@@ -613,16 +609,14 @@ def register_user(user_id, username, full_name, referrer_id=None):
                 try:
                     bot.send_message(
                         referrer_id,
-                        f"""═══════════════════════════
-✨ <b>НОВЫЙ РЕФЕРАЛ</b> ✨
-═══════════════════════════
+                        f"""✨ <b>НОВЫЙ РЕФЕРАЛ</b>
 
-<blockquote>🎉 <b>Новый реферал зарегистрировался!</b></blockquote>
+🎉 <b>Новый реферал зарегистрировался!</b>
 
-<b>👤 Информация о реферале:</b>
-<blockquote>Пользователь: {safe_full_name}</blockquote>
+<b>👤 Информация:</b>
+Пользователь: {safe_full_name}
 
-<blockquote>📢 <b>Бонусы будут начислены после того, как пользователь подпишется на все обязательные каналы.</b></blockquote>""",
+<b>📢 Бонусы будут начислены после подписки на все каналы.</b>""",
                         parse_mode='HTML'
                     )
                 except Exception as e:
@@ -688,7 +682,7 @@ def create_withdrawal(user_id, username, amount):
 
     if amount < min_withdrawal:
         conn.close()
-        return False, f"Минимальная сумма вывода: {format_usdt(min_withdrawal)}"
+        return False, f"Мин. сумма: {format_usdt(min_withdrawal)}"
 
     # Вставляем заявку на вывод
     safe_username = sanitize_text(username)
@@ -730,7 +724,7 @@ def create_withdrawal(user_id, username, amount):
     if message_id:
         withdrawal_messages[withdrawal_id] = message_id
 
-    return True, f"Заявка на вывод {format_usdt(amount)} успешно создана"
+    return True, f"Заявка на вывод {format_usdt(amount)} создана"
 
 def get_user_withdrawals(user_id, limit=10):
     """Получение истории выводов пользователя"""
@@ -823,13 +817,13 @@ def create_main_menu():
     """Главное меню"""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     buttons = [
-        "👤 Мой профиль",
-        "🔗 Пригласить друзей",
-        "💰 Вывод USDT",
-        "📊 Моя статистика",
-        "🏆 Топ рефереров",
-        "🎫 Активировать чек",
-        "📋 Мои заявки"
+        "👤 Профиль",
+        "🔗 Пригласить",
+        "💰 Вывод",
+        "📊 Статистика",
+        "🏆 Топ",
+        "🎫 Чек",
+        "📋 Заявки"
     ]
     keyboard.add(*buttons)
     return keyboard
@@ -839,14 +833,14 @@ def create_referral_keyboard(user_id):
     keyboard = types.InlineKeyboardMarkup(row_width=1)
 
     referral_link = generate_referral_link(user_id)
-    share_text = f"Привет! Присоединяйся к крутому боту с реферальной системой! За каждого друга дают {format_usdt(get_setting('referral_reward', REFERRAL_REWARD))}! 👇"
+    share_text = f"Привет! Присоединяйся к крутому боту! За каждого друга дают {format_usdt(get_setting('referral_reward', REFERRAL_REWARD))}! 👇"
 
     import urllib.parse
     encoded_text = urllib.parse.quote(share_text)
 
     keyboard.add(
         types.InlineKeyboardButton(
-            "📱 Поделиться ссылкой",
+            "📱 Поделиться",
             url=f"https://t.me/share/url?url={referral_link}&text={encoded_text}"
         )
     )
@@ -896,7 +890,6 @@ def check_and_award_referral_bonus(user_id):
 
         # Получаем настройки
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-        # Приветственный бонус отключен - не начисляем рефералу
 
         # Проверяем, были ли уже начислены бонусы за этого реферала
         cursor.execute('''
@@ -925,21 +918,19 @@ def check_and_award_referral_bonus(user_id):
 
                 bot.send_message(
                     referrer_id,
-                    f"""═══════════════════════════
-✨ <b>НОВЫЙ РЕФЕРАЛ</b> ✨
-═══════════════════════════
+                    f"""✨ <b>НОВЫЙ РЕФЕРАЛ</b>
 
-<blockquote>🎉 <b>Поздравляем!</b></blockquote>
+🎉 <b>Поздравляем!</b>
 
-Приглашенный вами пользователь подписался на все обязательные каналы!
+Приглашенный вами пользователь подписался на все каналы!
 
-<b>👤 Информация о реферале:</b>
-<blockquote>Пользователь: {sanitize_text(user_name)}</blockquote>
+<b>👤 Информация:</b>
+Пользователь: {sanitize_text(user_name)}
 
 <b>✅ Начисление:</b>
-<blockquote>Вам начислено: +{format_usdt(referral_reward)}</blockquote>
+Вам начислено: +{format_usdt(referral_reward)}
 
-<blockquote>🎯 <b>Продолжайте приглашать друзей!</b></blockquote>""",
+🎯 <b>Продолжайте приглашать друзей!</b>""",
                     parse_mode='HTML'
                 )
             except Exception as e:
@@ -957,11 +948,9 @@ def check_subscription_after_callback(call):
     if all_subscribed:
         try:
             bot.edit_message_text(
-                """═══════════════════════════
-✨ <b>ВСЕ ПОДПИСКИ АКТИВНЫ</b> ✨
-═══════════════════════════
+                """✅ <b>ВСЕ ПОДПИСКИ АКТИВНЫ</b>
 
-<blockquote>✅ <b>Отлично! Вы подписаны на все обязательные каналы!</b></blockquote>
+✅ <b>Отлично! Вы подписаны на все каналы!</b>
 
 Теперь вы можете пользоваться ботом.""",
                 call.message.chat.id,
@@ -974,11 +963,9 @@ def check_subscription_after_callback(call):
         # Показываем главное меню
         bot.send_message(
             call.message.chat.id,
-            """═══════════════════════════
-✨ <b>ДОБРО ПОЖАЛОВАТЬ</b> ✨
-═══════════════════════════
+            """✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
 
-<blockquote>🎉 <b>Добро пожаловать в премиум бот!</b></blockquote>
+🎉 <b>Добро пожаловать в бот!</b>
 
 Выберите действие из меню ниже:""",
             parse_mode='HTML',
@@ -989,13 +976,11 @@ def check_subscription_after_callback(call):
         check_and_award_referral_bonus(user_id)
     else:
         # Показываем все каналы снова
-        channels_text = """═══════════════════════════
-✨ <b>ОБЯЗАТЕЛЬНЫЕ ПОДПИСКИ</b> ✨
-═══════════════════════════
+        channels_text = """❌ <b>ОБЯЗАТЕЛЬНЫЕ ПОДПИСКИ</b>
 
-<blockquote>❌ <b>Вы еще не подписались на все обязательные каналы!</b></blockquote>
+❌ <b>Вы еще не подписались на все каналы!</b>
 
-<b>Осталось подписаться на обязательные каналы:</b>\n\n"""
+<b>Осталось подписаться:</b>\n\n"""
 
         keyboard = types.InlineKeyboardMarkup()
 
@@ -1031,10 +1016,10 @@ def check_subscription_after_callback(call):
                 )
             )
 
-        channels_text += """\n<blockquote>✅ <b>После подписки на все обязательные каналы нажмите кнопку ниже</b></blockquote>"""
+        channels_text += """\n✅ <b>После подписки нажмите кнопку ниже</b>"""
 
         keyboard.add(
-            types.InlineKeyboardButton("🔄 Проверить подписку", callback_data="check_subscription_after")
+            types.InlineKeyboardButton("🔄 Проверить", callback_data="check_subscription_after")
         )
 
         try:
@@ -1053,14 +1038,14 @@ def create_admin_keyboard():
     """Клавиатура админ панели с новыми настройками"""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     buttons = [
-        "📊 Статистика бота",
-        "📢 Рассылка всем",
-        "📺 Управление каналами",
-        "💰 Управление выводами",
-        "💵 Добавить баланс",
-        "🎫 Управление чеками",
-        "⚙️ Настройки системы",  # НОВАЯ КНОПКА
-        "⬅️ Главное меню"
+        "📊 Статистика",
+        "📢 Рассылка",
+        "📺 Каналы",
+        "💰 Выводы",
+        "💵 Баланс",
+        "🎫 Чеки",
+        "⚙️ Настройки",
+        "⬅️ Назад"
     ]
     keyboard.add(*buttons)
     return keyboard
@@ -1069,16 +1054,14 @@ def create_admin_keyboard():
 def admin_command(message):
     """Команда /admin для доступа к админ панели"""
     if message.from_user.id not in ADMIN_IDS:
-        bot.send_message(message.chat.id, "❌ У вас нет доступа к админ панели")
+        bot.send_message(message.chat.id, "❌ Нет доступа")
         return
 
-    admin_text = """═══════════════════════════
-⚙️ <b>АДМИН ПАНЕЛЬ</b> ⚙️
-═══════════════════════════
+    admin_text = """⚙️ <b>АДМИН ПАНЕЛЬ</b>
 
-<blockquote><b>Добро пожаловать в панель управления!</b></blockquote>
+<b>Добро пожаловать в панель управления!</b>
 
-<b>Выберите раздел из меню ниже:</b>"""
+<b>Выберите раздел:</b>"""
 
     bot.send_message(
         message.chat.id,
@@ -1087,7 +1070,7 @@ def admin_command(message):
         reply_markup=create_admin_keyboard()
     )
 
-@bot.message_handler(func=lambda message: message.text == "📊 Статистика бота" and message.from_user.id in ADMIN_IDS)
+@bot.message_handler(func=lambda message: message.text == "📊 Статистика" and message.from_user.id in ADMIN_IDS)
 def bot_stats_command(message):
     """Статистика бота в USDT"""
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
@@ -1129,36 +1112,34 @@ def bot_stats_command(message):
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
         welcome_bonus = get_setting('referral_welcome_bonus', REFERRAL_WELCOME_BONUS)
 
-        stats_text = f"""═══════════════════════════
-📊 <b>СТАТИСТИКА БОТА</b> 📊
-═══════════════════════════
+        stats_text = f"""📊 <b>СТАТИСТИКА БОТА</b>
 
 <b>👥 ПОЛЬЗОВАТЕЛИ:</b>
-<blockquote>Всего: <b>{total_users}</b> 👤
-По реф.ссылкам: <b>{ref_users}</b> 🔗</blockquote>
+├ Всего: <b>{total_users}</b>
+└ По реф: <b>{ref_users}</b>
 
 <b>💰 {CURRENCY}:</b>
-<blockquote>Всего на балансах: <b>{format_usdt(total_balance)}</b>
-Средний баланс: <b>{format_usdt(total_balance/total_users if total_users > 0 else 0)}</b></blockquote>
+├ На балансах: <b>{format_usdt(total_balance)}</b>
+└ Средний: <b>{format_usdt(total_balance/total_users if total_users > 0 else 0)}</b>
 
 <b>💸 ВЫВОДЫ:</b>
-<blockquote>Одобрено: <b>{approved_withdrawals}</b> на {format_usdt(withdrawn_total)}
-Ожидает: <b>{pending_withdrawals}</b> на {format_usdt(pending_total)}</blockquote>
+├ Одобрено: <b>{approved_withdrawals}</b> на {format_usdt(withdrawn_total)}
+└ Ожидает: <b>{pending_withdrawals}</b> на {format_usdt(pending_total)}
 
 <b>⚙️ НАСТРОЙКИ:</b>
-<blockquote>Мин. вывод: <b>{format_usdt(min_withdrawal)}</b>
-Награда за реферала: <b>{format_usdt(referral_reward)}</b>
-Бонус рефералу: <b>{format_usdt(welcome_bonus)}</b></blockquote>
+├ Мин. вывод: <b>{format_usdt(min_withdrawal)}</b>
+├ Награда: <b>{format_usdt(referral_reward)}</b>
+└ Бонус: <b>{format_usdt(welcome_bonus)}</b>
 
-<b>📺 КАНАЛЫ И ССЫЛКИ:</b>
-<blockquote>Всего элементов: <b>{len(REQUIRED_CHANNELS) + len(SIMPLE_LINKS)}</b>
-Обязательных каналов: <b>{len(REQUIRED_CHANNELS)}</b>
-Простых ссылок: <b>{len(SIMPLE_LINKS)}</b></blockquote>
+<b>📺 КАНАЛЫ:</b>
+├ Всего: <b>{len(REQUIRED_CHANNELS) + len(SIMPLE_LINKS)}</b>
+├ Обязат: <b>{len(REQUIRED_CHANNELS)}</b>
+└ Простые: <b>{len(SIMPLE_LINKS)}</b>
 
 <b>🎫 ЧЕКИ:</b>
-<blockquote>Всего чеков: <b>{total_checks}</b>
-Активаций: <b>{total_check_activations}</b>
-Выдано через чеки: <b>{format_usdt(total_check_amount)}</b></blockquote>"""
+├ Всего: <b>{total_checks}</b>
+├ Акт-ций: <b>{total_check_activations}</b>
+└ Выдано: <b>{format_usdt(total_check_amount)}</b>"""
 
         bot.send_message(message.chat.id, stats_text, parse_mode='HTML')
 
@@ -1167,16 +1148,14 @@ def bot_stats_command(message):
     finally:
         conn.close()
 
-@bot.message_handler(func=lambda message: message.text == "📢 Рассылка всем" and message.from_user.id in ADMIN_IDS)
+@bot.message_handler(func=lambda message: message.text == "📢 Рассылка" and message.from_user.id in ADMIN_IDS)
 def mailing_all_command(message):
     """Рассылка всем пользователям"""
     msg = bot.send_message(
         message.chat.id,
-        """═══════════════════════════
-📢 <b>РАССЫЛКА ВСЕМ ПОЛЬЗОВАТЕЛЯМ</b> 📢
-═══════════════════════════
+        """📢 <b>РАССЫЛКА ВСЕМ</b>
 
-<blockquote>Отправьте сообщение для рассылки:</blockquote>
+Отправьте сообщение для рассылки:
 
 <i>Поддерживается HTML разметка</i>""",
         parse_mode='HTML'
@@ -1195,11 +1174,9 @@ def process_mailing_all(message):
 
     bot.send_message(
         message.chat.id,
-        f"""═══════════════════════════
-✨ <b>НАЧАЛО РАССЫЛКИ</b> ✨
-═══════════════════════════
+        f"""✨ <b>НАЧАЛО РАССЫЛКИ</b>
 
-<blockquote>⏳ Начинаю рассылку для {len(users)} пользователей...</blockquote>""",
+⏳ Начинаю рассылку для {len(users)} пользователей...""",
         parse_mode='HTML'
     )
 
@@ -1216,43 +1193,34 @@ def process_mailing_all(message):
 
     bot.send_message(
         message.chat.id,
-        f"""═══════════════════════════
-✅ <b>РАССЫЛКА ЗАВЕРШЕНА</b> ✅
-═══════════════════════════
-
-<blockquote>✅ <b>Рассылка завершена!</b></blockquote>
+        f"""✅ <b>РАССЫЛКА ЗАВЕРШЕНА</b>
 
 <b>📊 РЕЗУЛЬТАТЫ:</b>
-• Успешно: {success_count} пользователей
-• Не удалось: {fail_count} пользователей
-• Всего: {len(users)} пользователей
+├ Успешно: {success_count}
+└ Не удалось: {fail_count}
 
-<blockquote><i>Рассылка выполнена</i></blockquote>""",
+<i>Рассылка выполнена</i>""",
         parse_mode='HTML',
         reply_markup=create_admin_keyboard()
     )
 
-@bot.message_handler(func=lambda message: message.text == "📺 Управление каналами" and message.from_user.id in ADMIN_IDS)
+@bot.message_handler(func=lambda message: message.text == "📺 Каналы" and message.from_user.id in ADMIN_IDS)
 def manage_channels_command(message):
     """Управление каналами и ссылками"""
-    channels_text = """═══════════════════════════
-📺 <b>УПРАВЛЕНИЕ КАНАЛЫМИ И ССЫЛКАМИ</b> 📺
-═══════════════════════════
-
-<blockquote><b>Для пользователей все показывается в одном списке.</b></blockquote>
+    channels_text = """📺 <b>УПРАВЛЕНИЕ КАНАЛАМИ</b>
 
 <b>📝 КАК ДОБАВИТЬ:</b>
-• /addchannel_required - Обязательный канал (проверяется подписка)
-• /addlink_simple - Простая ссылка (любая ссылка, не проверяется)
+├ /addchannel_required - Обязательный канал
+└ /addlink_simple - Простая ссылка
 
 <b>🗑️ КАК УДАЛИТЬ:</b>
-Отправьте команду /removechannel
+/removechannel
 
 <b>📋 СПИСОК:</b>
-Отправьте команду /listchannels
+/listchannels
 
 <b>🔍 ПРОВЕРКА:</b>
-Отправьте команду /checksubs"""
+/checksubs"""
 
     bot.send_message(
         message.chat.id,
@@ -1268,16 +1236,13 @@ def add_channel_required_command(message):
 
     msg = bot.send_message(
         message.chat.id,
-        """═══════════════════════════
-➕ <b>ДОБАВЛЕНИЕ ОБЯЗАТЕЛЬНОГО КАНАЛА</b> ➕
-═══════════════════════════
+        """➕ <b>ДОБАВЛЕНИЕ КАНАЛА</b>
 
-<blockquote>Отправьте ссылку на канал в формате:</blockquote>
-
+Отправьте ссылку на канал:
 • @username
 • https://t.me/username
 
-<blockquote><i>Бот должен быть администратором в канале!</i></blockquote>""",
+<i>Бот должен быть администратором!</i>""",
         parse_mode='HTML'
     )
     bot.register_next_step_handler(msg, process_add_channel, 'required')
@@ -1290,18 +1255,15 @@ def add_link_simple_command(message):
 
     msg = bot.send_message(
         message.chat.id,
-        """═══════════════════════════
-➕ <b>ДОБАВЛЕНИЕ ПРОСТОЙ ССЫЛКИ</b> ➕
-═══════════════════════════
+        """➕ <b>ДОБАВЛЕНИЕ ССЫЛКИ</b>
 
-<blockquote>Отправьте:</blockquote>
-
-1. Ссылку (любую - канал, сайт и т.д.)
-2. Название для кнопки
+Отправьте:
+1. Ссылку
+2. Название
 
 <b>📋 ПРИМЕР:</b>
-<blockquote>https://t.me/my_channel
-Мой канал</blockquote>""",
+<code>https://t.me/my_channel
+Мой канал</code>""",
         parse_mode='HTML'
     )
     bot.register_next_step_handler(msg, process_add_link_simple)
@@ -1373,18 +1335,14 @@ def process_add_link_simple(message):
 
         bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-✅ <b>ССЫЛКА ДОБАВЛЕНА</b> ✅
-═══════════════════════════
-
-<blockquote>✅ <b>Ссылка успешно добавлена!</b></blockquote>
+            f"""✅ <b>ССЫЛКА ДОБАВЛЕНА</b>
 
 <b>🔗 ИНФОРМАЦИЯ:</b>
-• Название: {channel_name}
-• Ссылка: {channel_link}
-• Тип: простая ссылка (не проверяется)
+├ Название: {channel_name}
+├ Ссылка: {channel_link}
+└ Тип: простая ссылка
 
-<blockquote><i>Пользователи увидят эту ссылку в списке.</i></blockquote>""",
+<i>Пользователи увидят эту ссылку в списке.</i>""",
             parse_mode='HTML'
         )
 
@@ -1435,13 +1393,11 @@ def process_add_channel(message, channel_type):
                 except:
                     bot.send_message(
                         message.chat.id,
-                        f"""═══════════════════════════
-❌ <b>ОШИБКА ПРАВ</b> ❌
-═══════════════════════════
+                        f"""❌ <b>ОШИБКА ПРАВ</b>
 
-<blockquote>❌ Бот не является администратором в канале <b>{channel_name}</b></blockquote>
+❌ Бот не является администратором в канале <b>{channel_name}</b>
 
-<blockquote>Добавьте бота как администратора и попробуйте снова.</blockquote>""",
+Добавьте бота как администратора и попробуйте снова.""",
                         parse_mode='HTML'
                     )
                     return
@@ -1451,13 +1407,11 @@ def process_add_channel(message, channel_type):
             if channel_type == 'required':
                 bot.send_message(
                     message.chat.id,
-                    f"""═══════════════════════════
-❌ <b>ОШИБКА ПАРСИНГА</b> ❌
-═══════════════════════════
+                    f"""❌ <b>ОШИБКА ПАРСИНГА</b>
 
-<blockquote>❌ Не удалось получить информацию о канале: {str(e)}</blockquote>
+❌ Не удалось получить информацию о канале: {str(e)}
 
-<blockquote>Для обязательных каналов используйте правильные ссылки на Telegram каналы.</blockquote>""",
+Для обязательных каналов используйте правильные ссылки.""",
                     parse_mode='HTML'
                 )
                 return
@@ -1525,19 +1479,14 @@ def process_add_channel(message, channel_type):
         type_text = "обязательный (проверяется)" if channel_type == 'required' else "простая ссылка (не проверяется)"
         bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-✅ <b>УСПЕШНО ДОБАВЛЕНО</b> ✅
-═══════════════════════════
-
-<blockquote>✅ <b>Успешно добавлено!</b></blockquote>
+            f"""✅ <b>УСПЕШНО ДОБАВЛЕНО</b>
 
 <b>📺 ИНФОРМАЦИЯ:</b>
-• Название: {channel_name}
-• Ссылка: {channel_link}
-{f'• ID: {channel_id}' if channel_id else ''}
-• Тип: {type_text}
+├ Название: {channel_name}
+├ Ссылка: {channel_link}
+└ Тип: {type_text}
 
-<blockquote><i>Пользователи увидят это в списке.</i></blockquote>""",
+<i>Пользователи увидят это в списке.</i>""",
             parse_mode='HTML'
         )
 
@@ -1553,24 +1502,20 @@ def list_channels_command(message):
     all_items = get_all_items_for_admin()
 
     if not all_items:
-        channels_text = """═══════════════════════════
-📋 <b>СПИСОК КАНАЛОВ И ССЫЛОК</b> 📋
-═══════════════════════════
+        channels_text = """📋 <b>СПИСОК КАНАЛОВ</b>
 
-<blockquote>📭 <b>Список каналов и ссылок пуст</b></blockquote>
+📭 <b>Список каналов и ссылок пуст</b>
 
-<blockquote>Добавьте каналы или ссылки.</blockquote>"""
+Добавьте каналы или ссылки."""
     else:
-        channels_text = """═══════════════════════════
-📋 <b>СПИСОК КАНАЛОВ И ССЫЛОК</b> 📋
-═══════════════════════════\n\n"""
+        channels_text = """📋 <b>СПИСОК КАНАЛОВ</b>\n\n"""
 
         # Разделяем по типам
         required_channels = [ch for ch in all_items if ch['type'] == 'required']
         simple_links = [ch for ch in all_items if ch['type'] == 'simple']
 
         if required_channels:
-            channels_text += "<b>🔐 ОБЯЗАТЕЛЬНЫЕ КАНАЛЫ (проверяются):</b>\n"
+            channels_text += "<b>🔐 ОБЯЗАТЕЛЬНЫЕ:</b>\n"
             for i, ch in enumerate(required_channels, 1):
                 safe_name = sanitize_text(ch['channel_name'])
                 channels_text += f'{i}. <b>{safe_name}</b>\n'
@@ -1580,14 +1525,13 @@ def list_channels_command(message):
                 channels_text += '\n\n'
 
         if simple_links:
-            channels_text += "<b>🔗 ПРОСТЫЕ ССЫЛКИ (не проверяются):</b>\n"
+            channels_text += "<b>🔗 ПРОСТЫЕ:</b>\n"
             for i, ch in enumerate(simple_links, 1):
                 safe_name = sanitize_text(ch['channel_name'])
                 channels_text += f'{i}. <b>{safe_name}</b>\n'
                 channels_text += f'   🔗 {ch["channel_link"]}\n\n'
 
-        channels_text += f"<b>📊 ИТОГО:</b> {len(all_items)} элементов"
-        channels_text += f" ({len(required_channels)} обязательных, {len(simple_links)} простых ссылок)"
+        channels_text += f"<b>📊 ИТОГО:</b> {len(all_items)}"
 
     bot.send_message(
         message.chat.id,
@@ -1623,11 +1567,9 @@ def remove_channel_command(message):
 
     bot.send_message(
         message.chat.id,
-        """═══════════════════════════
-➖ <b>УДАЛЕНИЕ КАНАЛА ИЛИ ССЫЛКИ</b> ➖
-═══════════════════════════
+        """➖ <b>УДАЛЕНИЕ</b>
 
-<blockquote>Выберите что удалить из списка ниже:</blockquote>""",
+Выберите что удалить из списка ниже:""",
         parse_mode='HTML',
         reply_markup=keyboard
     )
@@ -1660,16 +1602,12 @@ def remove_channel_callback(call):
 
             safe_name = sanitize_text(channel_to_remove['channel_name'])
             bot.edit_message_text(
-                f"""═══════════════════════════
-✅ <b>УДАЛЕНО УСПЕШНО</b> ✅
-═══════════════════════════
-
-<blockquote>✅ <b>Удалено успешно!</b></blockquote>
+                f"""✅ <b>УДАЛЕНО УСПЕШНО</b>
 
 <b>📺 ИНФОРМАЦИЯ:</b>
-• Название: {safe_name}
-• Ссылка: {channel_link}
-• Тип: {'обязательный' if channel_type == 'required' else 'простая ссылка'}""",
+├ Название: {safe_name}
+├ Ссылка: {channel_link}
+└ Тип: {'обязательный' if channel_type == 'required' else 'простая ссылка'}""",
                 call.message.chat.id,
                 call.message.message_id,
                 parse_mode='HTML'
@@ -1688,11 +1626,9 @@ def check_subs_command(message):
 
     msg = bot.send_message(
         message.chat.id,
-        """═══════════════════════════
-👥 <b>ПРОВЕРКА ПОДПИСОК</b> 👥
-═══════════════════════════
+        """👥 <b>ПРОВЕРКА ПОДПИСОК</b>
 
-<blockquote>Отправьте ID пользователя для проверки его подписок:</blockquote>""",
+Отправьте ID пользователя для проверки:""",
         parse_mode='HTML'
     )
     bot.register_next_step_handler(msg, process_check_subs)
@@ -1706,14 +1642,9 @@ def process_check_subs(message):
         if all_subscribed:
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-✅ <b>РЕЗУЛЬТАТ ПРОВЕРКИ</b> ✅
-═══════════════════════════
+                f"""✅ <b>РЕЗУЛЬТАТ ПРОВЕРКИ</b>
 
-<blockquote>✅ <b>Пользователь {user_id} подписан на все обязательные каналы!</b></blockquote>
-
-<b>📊 ДОПОЛНИТЕЛЬНО:</b>
-<blockquote>Всего элементов показано пользователю: <b>{len(get_all_items_for_user())}</b></blockquote>""",
+✅ <b>Пользователь {user_id} подписан на все каналы!</b>""",
                 parse_mode='HTML'
             )
         else:
@@ -1721,37 +1652,30 @@ def process_check_subs(message):
 
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-❌ <b>РЕЗУЛЬТАТ ПРОВЕРКИ</b> ❌
-═══════════════════════════
+                f"""❌ <b>РЕЗУЛЬТАТ ПРОВЕРКИ</b>
 
-<blockquote>❌ <b>Пользователь {user_id} не подписан на обязательные каналы:</b></blockquote>
+❌ <b>Пользователь {user_id} не подписан:</b>
 
-{channels_text}
-
-<b>📊 ДОПОЛНИТЕЛЬНО:</b>
-<blockquote>Всего элементов показано пользователю: <b>{len(get_all_items_for_user())}</b></blockquote>""",
+{channels_text}""",
                 parse_mode='HTML'
             )
 
     except ValueError:
-        bot.send_message(message.chat.id, "❌ Неверный формат ID пользователя")
+        bot.send_message(message.chat.id, "❌ Неверный формат ID")
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}")
 
-@bot.message_handler(func=lambda message: message.text == "💵 Добавить баланс" and message.from_user.id in ADMIN_IDS)
+@bot.message_handler(func=lambda message: message.text == "💵 Баланс" and message.from_user.id in ADMIN_IDS)
 def add_balance_command(message):
     """Добавление баланса вручную"""
     msg = bot.send_message(
         message.chat.id,
-        f"""═══════════════════════════
-➕ <b>ДОБАВЛЕНИЕ БАЛАНСА</b> ➕
-═══════════════════════════
+        f"""➕ <b>ДОБАВЛЕНИЕ БАЛАНСА</b>
 
-<blockquote>Введите ID пользователя и количество {CURRENCY} через пробел:</blockquote>
+Введите ID пользователя и количество {CURRENCY} через пробел:
 
 <b>📋 ПРИМЕР:</b>
-<blockquote><code>123456789 10.5</code></blockquote>""",
+<code>123456789 10.5</code>""",
         parse_mode='HTML'
     )
     bot.register_next_step_handler(msg, process_add_balance_manual)
@@ -1804,17 +1728,15 @@ def process_add_balance_manual(message):
             safe_name = sanitize_text(user[1])
             bot.send_message(
                 user_id,
-                f"""═══════════════════════════
-✨ <b>БОНУС НАЧИСЛЕН</b> ✨
-═══════════════════════════
+                f"""✨ <b>БОНУС НАЧИСЛЕН</b>
 
-<blockquote>🎁 <b>Вам начислен бонус!</b></blockquote>
+🎁 <b>Вам начислен бонус!</b>
 
 <b>💰 ИНФОРМАЦИЯ:</b>
-<blockquote>Администратор добавил вам <b>{format_usdt(amount)}</b>
-Новый баланс: {format_usdt(new_balance)}</blockquote>
+├ Добавлено: <b>{format_usdt(amount)}</b>
+└ Новый баланс: {format_usdt(new_balance)}
 
-<blockquote>🎯 <b>Теперь вы можете выводить {CURRENCY}!</b></blockquote>""",
+🎯 <b>Теперь вы можете выводить {CURRENCY}!</b>""",
                 parse_mode='HTML'
             )
         except:
@@ -1823,18 +1745,13 @@ def process_add_balance_manual(message):
         safe_name = sanitize_text(user[1])
         bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-✅ <b>БАЛАНС ДОБАВЛЕН</b> ✅
-═══════════════════════════
+            f"""✅ <b>БАЛАНС ДОБАВЛЕН</b>
 
-<blockquote>✅ <b>Баланс успешно добавлен!</b></blockquote>
-
-<b>👤 ИНФОРМАЦИЯ О ПОЛЬЗОВАТЕЛЕ:</b>
-<blockquote>Пользователь: {safe_name} (@{user[0]})</blockquote>
-
-<b>💰 ИНФОРМАЦИЯ О НАЧИСЛЕНИИ:</b>
-<blockquote>Добавлено: +{format_usdt(amount)}
-Новый баланс: {format_usdt(new_balance)}</blockquote>""",
+<b>👤 ИНФОРМАЦИЯ:</b>
+├ Пользователь: {safe_name}
+├ Username: @{user[0]}
+├ Добавлено: +{format_usdt(amount)}
+└ Новый баланс: {format_usdt(new_balance)}""",
             parse_mode='HTML'
         )
 
@@ -1843,7 +1760,7 @@ def process_add_balance_manual(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}")
 
-@bot.message_handler(func=lambda message: message.text == "💰 Управление выводами" and message.from_user.id in ADMIN_IDS)
+@bot.message_handler(func=lambda message: message.text == "💰 Выводы" and message.from_user.id in ADMIN_IDS)
 def manage_withdrawals_command(message):
     """Управление выводами"""
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
@@ -1862,11 +1779,9 @@ def manage_withdrawals_command(message):
     conn.close()
 
     if not withdrawals:
-        withdrawals_text = """═══════════════════════════
-💰 <b>УПРАВЛЕНИЕ ВЫВОДАМИ</b> 💰
-═══════════════════════════
+        withdrawals_text = """💰 <b>УПРАВЛЕНИЕ ВЫВОДАМИ</b>
 
-<blockquote>📭 <b>Нет ожидающих заявок на вывод</b></blockquote>"""
+📭 <b>Нет ожидающих заявок</b>"""
         bot.send_message(
             message.chat.id,
             withdrawals_text,
@@ -1874,9 +1789,7 @@ def manage_withdrawals_command(message):
         )
         return
 
-    withdrawals_text = """═══════════════════════════
-💰 <b>ОЖИДАЮЩИЕ ЗАЯВКИ НА ВЫВОД</b> 💰
-═══════════════════════════\n\n"""
+    withdrawals_text = """💰 <b>ОЖИДАЮЩИЕ ЗАЯВКИ</b>\n\n"""
 
     keyboard = types.InlineKeyboardMarkup(row_width=2)
 
@@ -1920,11 +1833,9 @@ def admin_approve_callback(call):
 
         msg = bot.send_message(
             call.message.chat.id,
-            f"""═══════════════════════════
-💬 <b>ОДОБРЕНИЕ ЗАЯВКИ #{withdrawal_id}</b> 💬
-═══════════════════════════
+            f"""💬 <b>ОДОБРЕНИЕ #{withdrawal_id}</b>
 
-<blockquote>Введите сообщение для пользователя (или 'нет' если не нужно):</blockquote>""",
+Введите сообщение для пользователя (или 'нет' если не нужно):""",
             parse_mode='HTML'
         )
 
@@ -1953,22 +1864,18 @@ def process_approve_withdrawal(message, withdrawal_id):
                 WHERE withdrawal_id = ?
             ''', (admin_message, withdrawal_id))
 
-            # Не возвращаем USDT при одобрении - они уже были списаны
-
             try:
                 bot.send_message(
                     user_id,
-                    f"""═══════════════════════════
-✅ <b>ЗАЯВКА ОДОБРЕНА</b> ✅
-═══════════════════════════
+                    f"""✅ <b>ЗАЯВКА ОДОБРЕНА</b>
 
-<blockquote>✅ <b>Ваша заявка на вывод одобрена!</b></blockquote>
+✅ <b>Ваша заявка на вывод одобрена!</b>
 
-<b>📋 ДЕТАЛИ ЗАЯВКИ:</b>
-<blockquote>Сумма: {format_usdt(amount)}
-Номер заявки: #{withdrawal_id}
-Дата обработки: {datetime.now().strftime('%Y-%m-%d %H:%M')}</blockquote>
-{f'<b>💬 СООБЩЕНИЕ:</b>\n<blockquote>{admin_message}</blockquote>' if admin_message else ''}""",
+<b>📋 ДЕТАЛИ:</b>
+├ Сумма: {format_usdt(amount)}
+├ Номер: #{withdrawal_id}
+└ Дата: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+{f'<b>💬 СООБЩЕНИЕ:</b>\n{admin_message}' if admin_message else ''}""",
                     parse_mode='HTML'
                 )
             except:
@@ -1994,11 +1901,9 @@ def process_approve_withdrawal(message, withdrawal_id):
 
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-✅ <b>ЗАЯВКА ОДОБРЕНА</b> ✅
-═══════════════════════════
+                f"""✅ <b>ЗАЯВКА ОДОБРЕНА</b>
 
-<blockquote>✅ <b>Заявка #{withdrawal_id} одобрена!</b></blockquote>""",
+✅ <b>Заявка #{withdrawal_id} одобрена!</b>""",
                 parse_mode='HTML',
                 reply_markup=create_admin_keyboard()
             )
@@ -2024,11 +1929,9 @@ def admin_reject_callback(call):
 
         msg = bot.send_message(
             call.message.chat.id,
-            f"""═══════════════════════════
-💬 <b>ОТКЛОНЕНИЕ ЗАЯВКИ #{withdrawal_id}</b> 💬
-═══════════════════════════
+            f"""💬 <b>ОТКЛОНЕНИЕ #{withdrawal_id}</b>
 
-<blockquote>Введите причину отклонения:</blockquote>""",
+Введите причину отклонения:""",
             parse_mode='HTML'
         )
 
@@ -2067,21 +1970,19 @@ def process_reject_withdrawal(message, withdrawal_id):
             try:
                 bot.send_message(
                     user_id,
-                    f"""═══════════════════════════
-❌ <b>ЗАЯВКА ОТКЛОНЕНА</b> ❌
-═══════════════════════════
+                    f"""❌ <b>ЗАЯВКА ОТКЛОНЕНА</b>
 
-<blockquote>❌ <b>Ваша заявка на вывод отклонена</b></blockquote>
+❌ <b>Ваша заявка на вывод отклонена</b>
 
-<b>📋 ДЕТАЛИ ЗАЯВКИ:</b>
-<blockquote>Сумма: {format_usdt(amount)}
-Номер заявки: #{withdrawal_id}
-Дата обработки: {datetime.now().strftime('%Y-%m-%d %H:%M')}</blockquote>
+<b>📋 ДЕТАЛИ:</b>
+├ Сумма: {format_usdt(amount)}
+├ Номер: #{withdrawal_id}
+└ Дата: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 
-<blockquote>⚠️ <b>{CURRENCY} НЕ возвращаются на баланс при отклонении</b></blockquote>
+⚠️ <b>{CURRENCY} НЕ возвращаются на баланс</b>
 
 <b>💬 ПРИЧИНА:</b>
-<blockquote>{reject_reason}</blockquote>""",
+{reject_reason}""",
                     parse_mode='HTML'
                 )
             except:
@@ -2107,13 +2008,11 @@ def process_reject_withdrawal(message, withdrawal_id):
 
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-❌ <b>ЗАЯВКА ОТКЛОНЕНА</b> ❌
-═══════════════════════════
+                f"""❌ <b>ЗАЯВКА ОТКЛОНЕНА</b>
 
-<blockquote>❌ <b>Заявка #{withdrawal_id} отклонена!</b></blockquote>
+❌ <b>Заявка #{withdrawal_id} отклонена!</b>
 
-<blockquote>⚠️ {CURRENCY} не возвращены пользователю (сгорели).</blockquote>""",
+⚠️ {CURRENCY} не возвращены пользователю.""",
                 parse_mode='HTML',
                 reply_markup=create_admin_keyboard()
             )
@@ -2133,7 +2032,7 @@ def channel_approve_callback(call):
 
         # Проверяем, является ли пользователь админом
         if call.from_user.id not in ADMIN_IDS:
-            bot.answer_callback_query(call.id, "❌ У вас нет прав для одобрения заявок")
+            bot.answer_callback_query(call.id, "❌ Нет прав")
             return
 
         # Удаляем клавиатуру из сообщения
@@ -2146,16 +2045,14 @@ def channel_approve_callback(call):
         except:
             pass
 
-        bot.answer_callback_query(call.id, "✅ Заявка будет одобрена через админ-панель")
+        bot.answer_callback_query(call.id, "✅ Заявка будет одобрена")
 
         # Перенаправляем в админ-панель для завершения
         bot.send_message(
             call.from_user.id,
-            f"""═══════════════════════════
-🎯 <b>ОДОБРЕНИЕ ЗАЯВКИ #{withdrawal_id}</b> 🎯
-═══════════════════════════
+            f"""🎯 <b>ОДОБРЕНИЕ #{withdrawal_id}</b>
 
-<blockquote>Перейдите в админ-панель для завершения обработки.</blockquote>""",
+Перейдите в админ-панель для завершения.""",
             parse_mode='HTML'
         )
 
@@ -2170,7 +2067,7 @@ def channel_reject_callback(call):
 
         # Проверяем, является ли пользователь админом
         if call.from_user.id not in ADMIN_IDS:
-            bot.answer_callback_query(call.id, "❌ У вас нет прав для отклонения заявки")
+            bot.answer_callback_query(call.id, "❌ Нет прав")
             return
 
         # Удаляем клавиатуру из сообщения
@@ -2183,38 +2080,31 @@ def channel_reject_callback(call):
         except:
             pass
 
-        bot.answer_callback_query(call.id, "❌ Заявка будет отклонена через админ-панель")
+        bot.answer_callback_query(call.id, "❌ Заявка будет отклонена")
 
         # Перенаправляем в админ-панель для завершения
         bot.send_message(
             call.from_user.id,
-            f"""═══════════════════════════
-🎯 <b>ОТКЛОНЕНИЕ ЗАЯВКИ #{withdrawal_id}</b> 🎯
-═══════════════════════════
+            f"""🎯 <b>ОТКЛОНЕНИЕ #{withdrawal_id}</b>
 
-<blockquote>Перейдите в админ-панель для завершения обработки.</blockquote>""",
+Перейдите в админ-панель для завершения.""",
             parse_mode='HTML'
         )
 
     except Exception as e:
         bot.answer_callback_query(call.id, f"Ошибка: {str(e)}")
 
-@bot.message_handler(func=lambda message: message.text == "🎫 Управление чеками" and message.from_user.id in ADMIN_IDS)
+@bot.message_handler(func=lambda message: message.text == "🎫 Чеки" and message.from_user.id in ADMIN_IDS)
 def manage_checks_command(message):
     """Управление чеками"""
-    checks_text = """═══════════════════════════
-🎫 <b>УПРАВЛЕНИЕ ЧЕКАМИ</b> 🎫
-═══════════════════════════
-
-<blockquote><b>Что такое чеки?</b>
-Чеки - это промо-коды, которые можно активировать для получения USDT.</blockquote>
+    checks_text = """🎫 <b>УПРАВЛЕНИЕ ЧЕКАМИ</b>
 
 <b>📝 ДОСТУПНЫЕ ДЕЙСТВИЯ:</b>
-• /createcheck - Создать новый чек
-• /listchecks - Список всех чеков
-• /checkinfo [код] - Информация о чеке
-• /deactivatecheck [код] - Деактивировать чек
-• /checkstats - Статистика по чекам"""
+├ /createcheck - Создать чек
+├ /listchecks - Список чеков
+├ /checkinfo [код] - Информация
+├ /deactivatecheck [код] - Деактивировать
+└ /checkstats - Статистика"""
 
     bot.send_message(
         message.chat.id,
@@ -2230,18 +2120,15 @@ def create_check_command(message):
 
     msg = bot.send_message(
         message.chat.id,
-        """═══════════════════════════
-🎫 <b>СОЗДАНИЕ ЧЕКА</b> 🎫
-═══════════════════════════
+        """🎫 <b>СОЗДАНИЕ ЧЕКА</b>
 
-<blockquote>Введите данные в формате:</blockquote>
+Введите данные в формате:
 
 <code>сумма_USDT количество_активаций описание(опционально)</code>
 
 <b>📋 ПРИМЕРЫ:</b>
-<blockquote><code>1 10 Приветственный бонус</code>
-<code>0.5 5</code>
-<code>5 1 Специальный приз</code></blockquote>""",
+<code>1 10 Приветственный бонус</code>
+<code>0.5 5</code>""",
         parse_mode='HTML'
     )
     bot.register_next_step_handler(msg, process_create_check)
@@ -2259,7 +2146,7 @@ def process_create_check(message):
         description = sanitize_text(' '.join(parts[2:])) if len(parts) > 2 else None
 
         if amount <= 0 or max_activations <= 0:
-            bot.send_message(message.chat.id, "❌ Сумма и количество активаций должны быть больше 0!")
+            bot.send_message(message.chat.id, "❌ Сумма и количество должны быть больше 0!")
             return
 
         # Создаем чек
@@ -2272,28 +2159,19 @@ def process_create_check(message):
         except:
             activation_link = f"https://t.me/ваш_бот?start=check_{check_code}"
 
-        response_text = f"""═══════════════════════════
-✅ <b>ЧЕК УСПЕШНО СОЗДАН</b> ✅
-═══════════════════════════
+        response_text = f"""✅ <b>ЧЕК СОЗДАН</b>
 
-<blockquote>✅ <b>Чек успешно создан!</b> 🎫</blockquote>
+<b>📋 ИНФОРМАЦИЯ:</b>
+├ Код: <code>{check_code}</code>
+├ Сумма: <b>{format_usdt(amount)}</b>
+├ Активаций: <b>{max_activations}</b>
+└ Описание: <b>{description or 'Не указано'}</b>
 
-<b>📋 ИНФОРМАЦИЯ О ЧЕКЕ:</b>
-<blockquote>• Код: <code>{check_code}</code>
-• Сумма: <b>{format_usdt(amount)}</b>
-• Активаций: <b>{max_activations}</b>
-• Описание: <b>{description or 'Не указано'}</b></blockquote>
+<b>🔗 ССЫЛКА:</b>
+<code>{activation_link}</code>
 
-<b>🔗 ССЫЛКА ДЛЯ АКТИВАЦИИ:</b>
-<blockquote><code>{activation_link}</code></blockquote>
-
-<b>📝 КОМАНДА ДЛЯ АКТИВАЦИИ:</b>
-<blockquote><code>/activate {check_code}</code></blockquote>
-
-<blockquote>💡 <b>Как активировать:</b>
-1. Отправьте пользователю ссылку
-2. Или попросите ввести команду /activate {check_code}
-3. После активации пользователь получит {format_usdt(amount)}</blockquote>"""
+<b>📝 КОМАНДА:</b>
+<code>/activate {check_code}</code>"""
 
         bot.send_message(
             message.chat.id,
@@ -2315,24 +2193,19 @@ def list_checks_command(message):
     checks = get_all_checks(20)
 
     if not checks:
-        checks_text = """═══════════════════════════
-📋 <b>СПИСОК ЧЕКОВ</b> 📋
-═══════════════════════════
+        checks_text = """📋 <b>СПИСОК ЧЕКОВ</b>
 
-<blockquote>📭 <b>Список чеков пуст</b></blockquote>
+📭 <b>Список чеков пуст</b>
 
-<blockquote>Создайте первый чек командой /createcheck</blockquote>"""
+Создайте первый чек командой /createcheck"""
     else:
-        checks_text = """═══════════════════════════
-📋 <b>СПИСОК ЧЕКОВ</b> 📋
-═══════════════════════════\n\n"""
+        checks_text = """📋 <b>СПИСОК ЧЕКОВ</b>\n\n"""
 
         for check in checks:
-            status = "✅ Активен" if check['is_active'] else "❌ Деактивирован"
+            status = "✅" if check['is_active'] else "❌"
             safe_desc = sanitize_text(check['description']) if check['description'] else ""
-            checks_text += f"🎫 <b>{check['check_code']}</b>\n"
+            checks_text += f"{status} <b>{check['check_code']}</b>\n"
             checks_text += f"   💰 {format_usdt(check['amount'])} | 👥 {check['current_activations']}/{check['max_activations']}\n"
-            checks_text += f"   📅 {check['created_at'][:10]} | {status}\n"
             if safe_desc:
                 checks_text += f"   📝 {safe_desc}\n"
             checks_text += "\n"
@@ -2351,41 +2224,39 @@ def check_info_command(message):
 
     parts = message.text.split()
     if len(parts) < 2:
-        bot.send_message(message.chat.id, "❌ Укажите код чека: /checkinfo КОД")
+        bot.send_message(message.chat.id, "❌ Укажите код: /checkinfo КОД")
         return
 
     check_code = parts[1].upper()
     check_info = get_check_info(check_code)
 
     if not check_info:
-        bot.send_message(message.chat.id, f"❌ Чек с кодом {check_code} не найден")
+        bot.send_message(message.chat.id, f"❌ Чек {check_code} не найден")
         return
 
     status = "✅ Активен" if check_info['is_active'] else "❌ Деактивирован"
     safe_desc = sanitize_text(check_info['description']) if check_info['description'] else "Не указано"
     safe_creator = sanitize_text(check_info['creator_name']) if check_info['creator_name'] else "Неизвестно"
 
-    check_text = f"""═══════════════════════════
-🎫 <b>ИНФОРМАЦИЯ О ЧЕКЕ {check_code}</b> 🎫
-═══════════════════════════
+    check_text = f"""🎫 <b>ИНФОРМАЦИЯ О ЧЕКЕ {check_code}</b>
 
 <b>📋 ОСНОВНАЯ ИНФОРМАЦИЯ:</b>
-<blockquote>• Код: <code>{check_info['check_code']}</code>
-• Сумма: <b>{format_usdt(check_info['amount'])}</b>
-• Активаций: <b>{check_info['current_activations']}/{check_info['max_activations']}</b>
-• Статус: <b>{status}</b>
-• Создал: <b>{safe_creator}</b>
-• Дата создания: <b>{check_info['created_at']}</b>
-• Описание: <b>{safe_desc}</b></blockquote>\n"""
+├ Код: <code>{check_info['check_code']}</code>
+├ Сумма: <b>{format_usdt(check_info['amount'])}</b>
+├ Активаций: <b>{check_info['current_activations']}/{check_info['max_activations']}</b>
+├ Статус: <b>{status}</b>
+├ Создал: <b>{safe_creator}</b>
+├ Дата: <b>{check_info['created_at']}</b>
+└ Описание: <b>{safe_desc}</b>"""
 
     try:
         bot_username = bot.get_me().username
         activation_link = f"https://t.me/{bot_username}?start=check_{check_code}"
-        check_text += f"<b>🔗 ССЫЛКА ДЛЯ АКТИВАЦИИ:</b>\n<blockquote><code>{activation_link}</code></blockquote>\n\n"
+        check_text += f"\n\n<b>🔗 ССЫЛКА:</b>\n<code>{activation_link}</code>"
     except:
-        check_text += f"<b>🔗 ССЫЛКА ДЛЯ АКТИВАЦИИ:</b>\n<blockquote><code>https://t.me/ваш_бот?start=check_{check_code}</code></blockquote>\n\n"
+        pass
 
-    check_text += f"<b>📝 КОМАНДА ДЛЯ АКТИВАЦИИ:</b>\n<blockquote><code>/activate {check_code}</code></blockquote>"
+    check_text += f"\n\n<b>📝 КОМАНДА:</b>\n<code>/activate {check_code}</code>"
 
     bot.send_message(
         message.chat.id,
@@ -2401,7 +2272,7 @@ def deactivate_check_command(message):
 
     parts = message.text.split()
     if len(parts) < 2:
-        bot.send_message(message.chat.id, "❌ Укажите код чека: /deactivatecheck КОД")
+        bot.send_message(message.chat.id, "❌ Укажите код: /deactivatecheck КОД")
         return
 
     check_code = parts[1].upper()
@@ -2409,7 +2280,7 @@ def deactivate_check_command(message):
     # Проверяем существование чека
     check_info = get_check_info(check_code)
     if not check_info:
-        bot.send_message(message.chat.id, f"❌ Чек с кодом {check_code} не найден")
+        bot.send_message(message.chat.id, f"❌ Чек {check_code} не найден")
         return
 
     if not check_info['is_active']:
@@ -2421,13 +2292,11 @@ def deactivate_check_command(message):
 
     bot.send_message(
         message.chat.id,
-        f"""═══════════════════════════
-✅ <b>ЧЕК ДЕАКТИВИРОВАН</b> ✅
-═══════════════════════════
+        f"""✅ <b>ЧЕК ДЕАКТИВИРОВАН</b>
 
-<blockquote>✅ <b>Чек {check_code} успешно деактивирован!</b></blockquote>
+✅ <b>Чек {check_code} деактивирован!</b>
 
-<blockquote>Теперь его нельзя активировать.</blockquote>""",
+Теперь его нельзя активировать.""",
         parse_mode='HTML'
     )
 
@@ -2457,23 +2326,21 @@ def check_stats_command(message):
 
     conn.close()
 
-    stats_text = f"""═══════════════════════════
-📊 <b>СТАТИСТИКА ПО ЧЕКАМ</b> 📊
-═══════════════════════════
+    stats_text = f"""📊 <b>СТАТИСТИКА ПО ЧЕКАМ</b>
 
-<b>🎫 ОБЩАЯ СТАТИСТИКА:</b>
-<blockquote>• Всего чеков: <b>{total_checks}</b>
-• Активных чеков: <b>{active_checks}</b>
-• Всего активаций: <b>{total_activations}</b></blockquote>
+<b>🎫 ОБЩАЯ:</b>
+├ Всего чеков: <b>{total_checks}</b>
+├ Активных: <b>{active_checks}</b>
+└ Активаций: <b>{total_activations}</b>
 
-<b>💰 РАСПРЕДЕЛЕНИЕ {CURRENCY}:</b>
-<blockquote>• Потенциально к выдаче: <b>{format_usdt(total_potential)}</b>
-• Уже выдано: <b>{format_usdt(total_distributed)}</b>
-• Осталось выдать: <b>{format_usdt(total_potential - total_distributed)}</b></blockquote>
+<b>💰 РАСПРЕДЕЛЕНИЕ:</b>
+├ Потенциально: <b>{format_usdt(total_potential)}</b>
+├ Уже выдано: <b>{format_usdt(total_distributed)}</b>
+└ Осталось: <b>{format_usdt(total_potential - total_distributed)}</b>
 
 <b>📈 ЭФФЕКТИВНОСТЬ:</b>
-<blockquote>• Процент активаций: <b>{round((total_distributed / total_potential * 100) if total_potential > 0 else 0, 1)}%</b>
-• Средний чек: <b>{format_usdt(total_distributed / total_activations if total_activations > 0 else 0)}</b></blockquote>"""
+├ Процент: <b>{round((total_distributed / total_potential * 100) if total_potential > 0 else 0, 1)}%</b>
+└ Средний чек: <b>{format_usdt(total_distributed / total_activations if total_activations > 0 else 0)}</b>"""
 
     bot.send_message(
         message.chat.id,
@@ -2481,36 +2348,32 @@ def check_stats_command(message):
         parse_mode='HTML'
     )
 
-@bot.message_handler(func=lambda message: message.text == "⚙️ Настройки системы" and message.from_user.id in ADMIN_IDS)
+@bot.message_handler(func=lambda message: message.text == "⚙️ Настройки" and message.from_user.id in ADMIN_IDS)
 def system_settings_command(message):
     """Управление настройками системы"""
     min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
     welcome_bonus = get_setting('referral_welcome_bonus', REFERRAL_WELCOME_BONUS)
 
-    settings_text = f"""═══════════════════════════
-⚙️ <b>НАСТРОЙКИ СИСТЕМЫ</b> ⚙️
-═══════════════════════════
-
-<blockquote><b>Текущие настройки системы:</b></blockquote>
+    settings_text = f"""⚙️ <b>НАСТРОЙКИ СИСТЕМЫ</b>
 
 <b>💰 ВЫВОД:</b>
-<blockquote>Минимальный вывод: <b>{format_usdt(min_withdrawal)}</b></blockquote>
+Мин. вывод: <b>{format_usdt(min_withdrawal)}</b>
 
 <b>👥 РЕФЕРАЛЬНАЯ СИСТЕМА:</b>
-<blockquote>Награда за реферала: <b>{format_usdt(referral_reward)}</b>
-Приветственный бонус реферала: <b>{format_usdt(welcome_bonus)}</b></blockquote>
+├ Награда: <b>{format_usdt(referral_reward)}</b>
+└ Бонус рефералу: <b>{format_usdt(welcome_bonus)}</b>
 
-<blockquote>Выберите настройку для изменения:</blockquote>"""
+Выберите настройку для изменения:"""
 
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         types.InlineKeyboardButton("💰 Мин. вывод", callback_data="setting_min_withdrawal"),
-        types.InlineKeyboardButton("🎁 Награда за реферала", callback_data="setting_referral_reward"),
-        types.InlineKeyboardButton("👋 Бонус рефералу", callback_data="setting_welcome_bonus")
+        types.InlineKeyboardButton("🎁 Награда", callback_data="setting_referral_reward"),
+        types.InlineKeyboardButton("👋 Бонус", callback_data="setting_welcome_bonus")
     )
     keyboard.add(
-        types.InlineKeyboardButton("⬅️ Назад в админ-панель", callback_data="admin_back")
+        types.InlineKeyboardButton("⬅️ Назад", callback_data="admin_back")
     )
 
     bot.send_message(
@@ -2534,15 +2397,13 @@ def setting_callback(call):
 
     msg = bot.send_message(
         call.message.chat.id,
-        f"""═══════════════════════════
-✏️ <b>ИЗМЕНЕНИЕ НАСТРОЙКИ</b> ✏️
-═══════════════════════════
+        f"""✏️ <b>ИЗМЕНЕНИЕ НАСТРОЙКИ</b>
 
-<blockquote>Текущее значение <b>{setting_names.get(setting_name, setting_name)}</b>:</blockquote>
+Текущее значение <b>{setting_names.get(setting_name, setting_name)}</b>:
 
-<blockquote><b>{format_usdt(current_value)}</b></blockquote>
+<b>{format_usdt(current_value)}</b>
 
-<blockquote>Введите новое значение в {CURRENCY} (число):</blockquote>""",
+Введите новое значение в {CURRENCY} (число):""",
         parse_mode='HTML'
     )
 
@@ -2568,17 +2429,13 @@ def process_setting_update(message, setting_name, chat_id, message_id):
 
         bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-✅ <b>НАСТРОЙКА ОБНОВЛЕНА</b> ✅
-═══════════════════════════
-
-<blockquote>✅ <b>Настройка успешно обновлена!</b></blockquote>
+            f"""✅ <b>НАСТРОЙКА ОБНОВЛЕНА</b>
 
 <b>📋 ИНФОРМАЦИЯ:</b>
-<blockquote>Настройка: <b>{setting_names.get(setting_name, setting_name)}</b>
-Новое значение: <b>{format_usdt(new_value)}</b></blockquote>
+├ Настройка: <b>{setting_names.get(setting_name, setting_name)}</b>
+└ Новое значение: <b>{format_usdt(new_value)}</b>
 
-<blockquote>Изменение вступит в силу сразу.</blockquote>""",
+Изменение вступит в силу сразу.""",
             parse_mode='HTML',
             reply_markup=create_admin_keyboard()
         )
@@ -2589,13 +2446,11 @@ def process_setting_update(message, setting_name, chat_id, message_id):
 @bot.callback_query_handler(func=lambda call: call.data == "admin_back")
 def admin_back_callback(call):
     """Возврат в админ панель"""
-    admin_text = """═══════════════════════════
-⚙️ <b>АДМИН ПАНЕЛЬ</b> ⚙️
-═══════════════════════════
+    admin_text = """⚙️ <b>АДМИН ПАНЕЛЬ</b>
 
-<blockquote><b>Добро пожаловать в панель управления!</b></blockquote>
+<b>Добро пожаловать в панель управления!</b>
 
-<b>Выберите раздел из меню ниже:</b>"""
+<b>Выберите раздел:</b>"""
 
     bot.edit_message_text(
         admin_text,
@@ -2604,16 +2459,14 @@ def admin_back_callback(call):
         parse_mode='HTML'
     )
 
-@bot.message_handler(func=lambda message: message.text == "⬅️ Главное меню" and message.from_user.id in ADMIN_IDS)
+@bot.message_handler(func=lambda message: message.text == "⬅️ Назад" and message.from_user.id in ADMIN_IDS)
 def admin_back_to_main_menu(message):
     """Возврат в главное меню из админ панели"""
     bot.send_message(
         message.chat.id,
-        """═══════════════════════════
-🏠 <b>ГЛАВНОЕ МЕНЮ</b> 🏠
-═══════════════════════════
+        """🏠 <b>ГЛАВНОЕ МЕНЮ</b>
 
-<blockquote>🏠 <b>Вы вернулись в главное меню</b></blockquote>""",
+🏠 <b>Вы вернулись в главное меню</b>""",
         parse_mode='HTML',
         reply_markup=create_main_menu()
     )
@@ -2658,37 +2511,31 @@ def start_command(message):
                 if user_info:
                     bot.send_message(
                         message.chat.id,
-                        f"""═══════════════════════════
-✅ <b>ЧЕК АКТИВИРОВАН</b> ✅
-═══════════════════════════
+                        f"""✅ <b>ЧЕК АКТИВИРОВАН</b>
 
-<blockquote>✅ <b>Чек активирован успешно!</b> 🎉</blockquote>
+✅ <b>Чек активирован успешно!</b> 🎉
 
 <b>💰 НАЧИСЛЕНИЕ:</b>
-<blockquote>{result_message}
-Ваш баланс: {format_usdt(user_info['balance'])}</blockquote>
+{result_message}
+Ваш баланс: {format_usdt(user_info['balance'])}
 
-<blockquote>🎯 <b>Теперь вы можете выводить {CURRENCY}!</b></blockquote>""",
+🎯 <b>Теперь вы можете выводить {CURRENCY}!</b>""",
                         parse_mode='HTML'
                     )
                 else:
                     bot.send_message(
                         message.chat.id,
-                        f"""═══════════════════════════
-✅ <b>ЧЕК АКТИВИРОВАН</b> ✅
-═══════════════════════════
+                        f"""✅ <b>ЧЕК АКТИВИРОВАН</b>
 
-<blockquote>✅ {result_message}</blockquote>""",
+✅ {result_message}""",
                         parse_mode='HTML'
                     )
             else:
                 bot.send_message(
                     message.chat.id,
-                    f"""═══════════════════════════
-❌ <b>ОШИБКА АКТИВАЦИИ</b> ❌
-═══════════════════════════
+                    f"""❌ <b>ОШИБКА АКТИВАЦИИ</b>
 
-<blockquote>❌ <b>Не удалось активировать чек:</b></blockquote>
+❌ <b>Не удалось активировать чек:</b>
 
 {result_message}""",
                     parse_mode='HTML'
@@ -2697,11 +2544,9 @@ def start_command(message):
             # Показываем главное меню
             bot.send_message(
                 message.chat.id,
-                """═══════════════════════════
-🏠 <b>ГЛАВНОЕ МЕНЮ</b> 🏠
-═══════════════════════════
+                """🏠 <b>ГЛАВНОЕ МЕНЮ</b>
 
-<blockquote>🏠 <b>Добро пожаловать!</b></blockquote>
+🏠 <b>Добро пожаловать!</b>
 
 Выберите действие из меню ниже:""",
                 parse_mode='HTML',
@@ -2744,20 +2589,18 @@ def start_command(message):
                 else:
                     check_and_award_referral_bonus(user_id)
 
-                    welcome_text = f"""═══════════════════════════
-✨ <b>ДОБРО ПОЖАЛОВАТЬ</b> ✨
-═══════════════════════════
+                    welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
 
-<blockquote>✨ <b>Добро пожаловать, {full_name}!</b></blockquote>
+✨ <b>Добро пожаловать, {full_name}!</b>
 
-<blockquote>За каждого приглашенного друга ты получишь {format_usdt(get_setting('referral_reward', REFERRAL_REWARD))}</blockquote>
+За каждого приглашенного друга ты получишь {format_usdt(get_setting('referral_reward', REFERRAL_REWARD))}
 
-<blockquote>После приглашения, средства будут автоматически зачислены на твой баланс.</blockquote>
+После приглашения, средства будут автоматически зачислены на твой баланс.
 
-<blockquote>Приглашай друзей и поднимай легкие $$$ на свой баланс!</blockquote>
+Приглашай друзей и зарабатывай!
 
 <b>👇 НАВИГАЦИЯ:</b>
-<blockquote>Используйте кнопки ниже для навигации:</blockquote>"""
+Используйте кнопки ниже:"""
 
                     bot.send_message(
                         message.chat.id,
@@ -2790,20 +2633,18 @@ def start_command(message):
 
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
-    welcome_text = f"""═══════════════════════════
-✨ <b>ДОБРО ПОЖАЛОВАТЬ</b> ✨
-═══════════════════════════
+    welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
 
-<blockquote>✨ <b>Добро пожаловать, {full_name}!</b></blockquote>
+✨ <b>Добро пожаловать, {full_name}!</b>
 
-<blockquote>За каждого приглашенного друга ты получишь {format_usdt(referral_reward)}</blockquote>
+За каждого приглашенного друга: {format_usdt(referral_reward)}
 
-<blockquote>После приглашения, средства будут автоматически зачислены на твой баланс.</blockquote>
+Средства зачисляются автоматически.
 
-<blockquote>Приглашай друзей и поднимай легкие $$$ на свой баланс!</blockquote>
+Приглашай друзей и зарабатывай!
 
 <b>👇 НАВИГАЦИЯ:</b>
-<blockquote>Используйте кнопки ниже для навигации:</blockquote>"""
+Используйте кнопки ниже:"""
 
     bot.send_message(
         message.chat.id,
@@ -2812,7 +2653,7 @@ def start_command(message):
         reply_markup=create_main_menu()
     )
 
-@bot.message_handler(func=lambda message: message.text == "👤 Мой профиль")
+@bot.message_handler(func=lambda message: message.text == "👤 Профиль")
 def profile_command(message):
     # Проверяем подписку на каналы
     if REQUIRED_CHANNELS:
@@ -2832,21 +2673,20 @@ def profile_command(message):
     if user_info:
         # Получаем реальную сумму выведенных средств
         total_withdrawn = get_user_total_withdrawn(message.from_user.id)
+        ref_count = user_info['referrals_count']
         
-        referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-        referral_link = generate_referral_link(message.from_user.id)
-        username_display = f"@{user_info['username']}" if user_info['username'] else "не указан"
+        # КОРОТКИЙ ТЕКСТ ПРОФИЛЯ:
+        profile_text = f"""👤 <b>Ваш профиль</b>
 
-profile_text = f"""
-👤 <b>Ваш профиль:</b>
+<b>🆔 ID:</b> <code>{user_info['user_id']}</code>
+<b>💰 Баланс:</b> {format_usdt(user_info['balance'])}
+<b>📤 Выведено:</b> {format_usdt(total_withdrawn)}
+<b>👥 Приглашено:</b> {ref_count} чел.
 
-<b>🆔 Ваш ID:</b> <code>{user_id}</code>
-<b>💰 Баланс:</b> <b>{balance} USDT</b>
-<b>📤 Выведено:</b> <b>{withdrawn} USDT</b>
-<b>👥 Приглашено друзей:</b> <b>{ref_count} человек</b>
+🔗 <b>Реф. ссылка:</b>
+<code>{generate_referral_link(message.from_user.id)}</code>
 
-<b>━━━━━━━━━━━━━━━━━━━━</b>
-"""
+<b>🎁 Награда за друга:</b> {format_usdt(get_setting('referral_reward', REFERRAL_REWARD))}"""
 
         bot.send_message(
             message.chat.id,
@@ -2855,7 +2695,7 @@ profile_text = f"""
             reply_markup=create_referral_keyboard(message.from_user.id)
         )
 
-@bot.message_handler(func=lambda message: message.text == "🔗 Пригласить друзей")
+@bot.message_handler(func=lambda message: message.text == "🔗 Пригласить")
 def invite_command(message):
     # Проверяем подписку на каналы
     if REQUIRED_CHANNELS:
@@ -2875,26 +2715,22 @@ def invite_command(message):
 
     if user_info:
         referral_link = generate_referral_link(message.from_user.id)
-
         referrals_count = user_info['referrals_count']
         earned = referrals_count * referral_reward
 
-        invite_text = f"""═══════════════════════════
-🎁 <b>ПРИГЛАСИТЬ ДРУЗЕЙ</b> 🎁
-═══════════════════════════
+        # КОРОТКИЙ ТЕКСТ РЕФЕРАЛКИ:
+        invite_text = f"""🎁 <b>Реферальная программа</b>
 
-<blockquote>За каждого приглашенного друга ты получишь {format_usdt(referral_reward)}
+<b>🎁 Награда:</b> {format_usdt(referral_reward)} за друга
 
-После приглашения, средства будут автоматически зачислены на твой баланс.</blockquote>
+<b>🔗 Ваша ссылка:</b>
+<code>{referral_link}</code>
 
-<b>🔗 Ссылка для приглашения:</b>
-<blockquote>{referral_link}</blockquote>
+<b>📊 Статистика:</b>
+├ Приглашено: {referrals_count} чел.
+└ Заработано: {format_usdt(earned)}
 
-<b>📊 СТАТИСТИКА:</b>
-<blockquote>Всего пригласил: {referrals_count} человек
-Заработано: {format_usdt(earned)}</blockquote>
-
-<blockquote>Приглашай друзей и поднимай легкие $$$ на свой баланс!</blockquote>"""
+💸 <b>Средства зачисляются автоматически!</b>"""
 
         bot.send_message(
             message.chat.id,
@@ -2903,7 +2739,7 @@ def invite_command(message):
             reply_markup=create_referral_keyboard(message.from_user.id)
         )
 
-@bot.message_handler(func=lambda message: message.text == "💰 Вывод USDT")
+@bot.message_handler(func=lambda message: message.text == "💰 Вывод")
 def withdrawal_command(message):
     # Проверяем подписку на каналы
     if REQUIRED_CHANNELS:
@@ -2925,19 +2761,14 @@ def withdrawal_command(message):
         bot.send_message(message.chat.id, "❌ Ошибка: пользователь не найден")
         return
 
-    withdrawal_text = f"""═══════════════════════════
-💰 <b>ВЫВОД {CURRENCY}</b> 💰
-═══════════════════════════
+    # КОРОТКИЙ ТЕКСТ ВЫВОДА:
+    withdrawal_text = f"""💰 <b>Вывод {CURRENCY}</b>
 
-<blockquote><b>💰 Вывод {CURRENCY}</b></blockquote>
+<b>💰 Баланс:</b> {format_usdt(user_info['balance'])}
+<b>📊 Мин. сумма:</b> {format_usdt(min_withdrawal)}
+<b>⏱️ Время:</b> до 24 часов
 
-<b>💰 ИНФОРМАЦИЯ О БАЛАНСЕ:</b>
-<blockquote>Ваш текущий баланс: {format_usdt(user_info['balance'])}
-Минимальная сумма вывода: {format_usdt(min_withdrawal)}
-Время обработки: до 24 часов
-Необходимо указать: Ваш username для связи</blockquote>
-
-<blockquote>👇 <b>Выберите сумму для вывода:</b></blockquote>"""
+👇 <b>Выберите сумму:</b>"""
 
     bot.send_message(
         message.chat.id,
@@ -2962,15 +2793,13 @@ def handle_withdrawal_callback(call):
     if action == "withdraw_custom":
         msg = bot.send_message(
             call.message.chat.id,
-            f"""═══════════════════════════
-💎 <b>ВЫВОД {CURRENCY}</b> 💎
-═══════════════════════════
+            f"""💎 <b>ВЫВОД {CURRENCY}</b>
 
-<blockquote><b>💎 Введите сумму для вывода</b></blockquote>
+<b>💎 Введите сумму для вывода</b>
 
 <b>📋 ТРЕБОВАНИЯ:</b>
-<blockquote>Минимальная сумма вывода: {format_usdt(min_withdrawal)}
-Введите сумму в {CURRENCY}:</blockquote>""",
+Мин. сумма: {format_usdt(min_withdrawal)}
+Введите сумму в {CURRENCY}:""",
             parse_mode='HTML'
         )
         bot.register_next_step_handler(msg, process_custom_withdrawal)
@@ -2996,7 +2825,7 @@ def handle_withdrawal_callback(call):
     if amount < min_withdrawal:
         bot.answer_callback_query(
             call.id,
-            f"❌ Минимальная сумма вывода {format_usdt(min_withdrawal)}",
+            f"❌ Мин. сумма {format_usdt(min_withdrawal)}",
             show_alert=True
         )
         return
@@ -3005,18 +2834,14 @@ def handle_withdrawal_callback(call):
 
     msg = bot.send_message(
         call.message.chat.id,
-        f"""═══════════════════════════
-📝 <b>ПОДТВЕРЖДЕНИЕ ВЫВОДА</b> 📝
-═══════════════════════════
-
-<blockquote><b>📝 Подтверждение вывода</b></blockquote>
+        f"""📝 <b>ПОДТВЕРЖДЕНИЕ ВЫВОДА</b>
 
 <b>💰 ДЕТАЛИ ВЫВОДА:</b>
-<blockquote>Сумма вывода: {format_usdt(amount)}
-Ваш баланс: {format_usdt(user_info['balance'])}
-Баланс после вывода: {format_usdt(user_info['balance'] - amount)}</blockquote>
+├ Сумма: {format_usdt(amount)}
+├ Ваш баланс: {format_usdt(user_info['balance'])}
+└ После вывода: {format_usdt(user_info['balance'] - amount)}
 
-<blockquote>✍️ <b>Введите ваш @username для связи:</b></blockquote>""",
+✍️ <b>Введите ваш @username для связи:</b>""",
         parse_mode='HTML'
     )
     bot.register_next_step_handler(msg, process_withdrawal_username, user_data)
@@ -3043,11 +2868,9 @@ def process_custom_withdrawal(message):
         if amount < min_withdrawal:
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-❌ <b>ОШИБКА ВЫВОДА</b> ❌
-═══════════════════════════
+                f"""❌ <b>ОШИБКА ВЫВОДА</b>
 
-<blockquote>❌ <b>Минимальная сумма вывода {format_usdt(min_withdrawal)}!</b></blockquote>""",
+❌ <b>Мин. сумма {format_usdt(min_withdrawal)}!</b>""",
                 parse_mode='HTML'
             )
             return
@@ -3061,16 +2884,14 @@ def process_custom_withdrawal(message):
         if user_info['balance'] < amount:
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-❌ <b>ОШИБКА ВЫВОДА</b> ❌
-═══════════════════════════
+                f"""❌ <b>ОШИБКА ВЫВОДА</b>
 
-<blockquote>❌ <b>Недостаточно {CURRENCY}!</b></blockquote>
+❌ <b>Недостаточно {CURRENCY}!</b>
 
 <b>💰 ДЕТАЛИ:</b>
-<blockquote>Вы хотите вывести: {format_usdt(amount)}
-Ваш баланс: {format_usdt(user_info['balance'])}
-Не хватает: {format_usdt(amount - user_info['balance'])}</blockquote>""",
+├ Хотите вывести: {format_usdt(amount)}
+├ Ваш баланс: {format_usdt(user_info['balance'])}
+└ Не хватает: {format_usdt(amount - user_info['balance'])}""",
                 parse_mode='HTML'
             )
             return
@@ -3079,18 +2900,14 @@ def process_custom_withdrawal(message):
 
         msg = bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-📝 <b>ПОДТВЕРЖДЕНИЕ ВЫВОДА</b> 📝
-═══════════════════════════
-
-<blockquote><b>📝 Подтверждение вывода</b></blockquote>
+            f"""📝 <b>ПОДТВЕРЖДЕНИЕ ВЫВОДА</b>
 
 <b>💰 ДЕТАЛИ ВЫВОДА:</b>
-<blockquote>Сумма вывода: {format_usdt(amount)}
-Ваш баланс: {format_usdt(user_info['balance'])}
-Баланс после вывода: {format_usdt(user_info['balance'] - amount)}</blockquote>
+├ Сумма: {format_usdt(amount)}
+├ Ваш баланс: {format_usdt(user_info['balance'])}
+└ После вывода: {format_usdt(user_info['balance'] - amount)}
 
-<blockquote>✍️ <b>Введите ваш @username для связи:</b></blockquote>""",
+✍️ <b>Введите ваш @username для связи:</b>""",
             parse_mode='HTML'
         )
         bot.register_next_step_handler(msg, process_withdrawal_username, user_data)
@@ -3098,11 +2915,9 @@ def process_custom_withdrawal(message):
     except ValueError:
         bot.send_message(
             message.chat.id,
-            """═══════════════════════════
-❌ <b>ОШИБКА ВВОДА</b> ❌
-═══════════════════════════
+            """❌ <b>ОШИБКА ВВОДА</b>
 
-<blockquote>❌ <b>Пожалуйста, введите число!</b></blockquote>""",
+❌ <b>Пожалуйста, введите число!</b>""",
             parse_mode='HTML'
         )
 
@@ -3115,11 +2930,9 @@ def process_withdrawal_username(message, user_data):
     if not username or username == '':
         bot.send_message(
             message.chat.id,
-            """═══════════════════════════
-❌ <b>ОШИБКА ВВОДА</b> ❌
-═══════════════════════════
+            """❌ <b>ОШИБКА ВВОДА</b>
 
-<blockquote>❌ <b>Пожалуйста, укажите ваш @username!</b></blockquote>""",
+❌ <b>Пожалуйста, укажите ваш @username!</b>""",
             parse_mode='HTML'
         )
         return
@@ -3134,41 +2947,37 @@ def process_withdrawal_username(message, user_data):
 
         bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-✅ <b>ЗАЯВКА СОЗДАНА</b> ✅
-═══════════════════════════
+            f"""✅ <b>ЗАЯВКА СОЗДАНА</b>
 
-<blockquote>✅ <b>Заявка на вывод создана!</b></blockquote>
+✅ <b>Заявка на вывод создана!</b>
 
-<b>📋 ДЕТАЛИ ЗАЯВКИ:</b>
-<blockquote>• Сумма: <b>{format_usdt(amount)}</b>
-• Username: <b>@{username}</b>
-• Ваш баланс: <b>{format_usdt(user_info['balance'])}</b>
-• Статус: <b>⏳ На рассмотрении</b></blockquote>
+<b>📋 ДЕТАЛИ:</b>
+├ Сумма: <b>{format_usdt(amount)}</b>
+├ Username: <b>@{username}</b>
+├ Ваш баланс: <b>{format_usdt(user_info['balance'])}</b>
+└ Статус: <b>⏳ На рассмотрении</b>
 
 <b>⏱️ ИНФОРМАЦИЯ:</b>
-<blockquote>Время обработки: до 24 часов
-С вами свяжутся: @{username}</blockquote>
+├ Время: до 24 часов
+└ Связь: @{username}
 
-<blockquote>🎯 <b>Следите за статусом заявки в разделе "Мои заявки"</b></blockquote>""",
+🎯 <b>Следите за статусом в "Заявки"</b>""",
             parse_mode='HTML',
             reply_markup=create_main_menu()
         )
     else:
         bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-❌ <b>ОШИБКА СОЗДАНИЯ</b> ❌
-═══════════════════════════
+            f"""❌ <b>ОШИБКА СОЗДАНИЯ</b>
 
-<blockquote>❌ <b>Ошибка!</b></blockquote>
+❌ <b>Ошибка!</b>
 
 {message_text}""",
             parse_mode='HTML',
             reply_markup=create_main_menu()
         )
 
-@bot.message_handler(func=lambda message: message.text == "🎫 Активировать чек")
+@bot.message_handler(func=lambda message: message.text == "🎫 Чек")
 def activate_check_menu_command(message):
     """Активация чека из меню"""
     user_id = message.from_user.id
@@ -3188,14 +2997,12 @@ def activate_check_menu_command(message):
 
     msg = bot.send_message(
         message.chat.id,
-        """═══════════════════════════
-🎫 <b>АКТИВАЦИЯ ЧЕКА</b> 🎫
-═══════════════════════════
+        """🎫 <b>АКТИВАЦИЯ ЧЕКА</b>
 
-<blockquote>Введите код чека:</blockquote>
+Введите код чека:
 
 <b>📋 ПРИМЕР:</b>
-<blockquote><code>ABC123XY</code></blockquote>""",
+<code>ABC123XY</code>""",
         parse_mode='HTML'
     )
     bot.register_next_step_handler(msg, process_activate_check_menu)
@@ -3208,11 +3015,9 @@ def process_activate_check_menu(message):
     if not check_code:
         bot.send_message(
             message.chat.id,
-            """═══════════════════════════
-❌ <b>ОШИБКА ВВОДА</b> ❌
-═══════════════════════════
+            """❌ <b>ОШИБКА ВВОДА</b>
 
-<blockquote>❌ <b>Введите код чека!</b></blockquote>""",
+❌ <b>Введите код чека!</b>""",
             parse_mode='HTML'
         )
         return
@@ -3225,39 +3030,33 @@ def process_activate_check_menu(message):
         if user_info:
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-✅ <b>ЧЕК АКТИВИРОВАН</b> ✅
-═══════════════════════════
+                f"""✅ <b>ЧЕК АКТИВИРОВАН</b>
 
-<blockquote>✅ <b>Чек активирован успешно!</b> 🎉</blockquote>
+✅ <b>Чек активирован успешно!</b> 🎉
 
 <b>💰 НАЧИСЛЕНИЕ:</b>
-<blockquote>{result_message}
-Ваш новый баланс: {format_usdt(user_info['balance'])}</blockquote>
+{result_message}
+Ваш новый баланс: {format_usdt(user_info['balance'])}
 
-<blockquote>🎯 <b>Теперь вы можете выводить {CURRENCY}!</b></blockquote>""",
+🎯 <b>Теперь вы можете выводить {CURRENCY}!</b>""",
                 parse_mode='HTML',
                 reply_markup=create_main_menu()
             )
         else:
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-✅ <b>ЧЕК АКТИВИРОВАН</b> ✅
-═══════════════════════════
+                f"""✅ <b>ЧЕК АКТИВИРОВАН</b>
 
-<blockquote>✅ {result_message}</blockquote>""",
+✅ {result_message}""",
                 parse_mode='HTML',
                 reply_markup=create_main_menu()
             )
     else:
         bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-❌ <b>ОШИБКА АКТИВАЦИИ</b> ❌
-═══════════════════════════
+            f"""❌ <b>ОШИБКА АКТИВАЦИИ</b>
 
-<blockquote>❌ <b>Не удалось активировать чек:</b></blockquote>
+❌ <b>Не удалось активировать чек:</b>
 
 {result_message}""",
             parse_mode='HTML',
@@ -3286,14 +3085,12 @@ def activate_check_command(message):
     if len(parts) < 2:
         bot.send_message(
             message.chat.id,
-            """═══════════════════════════
-🎫 <b>АКТИВАЦИЯ ЧЕКА</b> 🎫
-═══════════════════════════
+            """🎫 <b>АКТИВАЦИЯ ЧЕКА</b>
 
-<blockquote>Использование: <code>/activate КОД_ЧЕКА</code></blockquote>
+Использование: <code>/activate КОД_ЧЕКА</code>
 
 <b>📋 ПРИМЕР:</b>
-<blockquote><code>/activate ABC123XY</code></blockquote>""",
+<code>/activate ABC123XY</code>""",
             parse_mode='HTML'
         )
         return
@@ -3308,43 +3105,37 @@ def activate_check_command(message):
         if user_info:
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-✅ <b>ЧЕК АКТИВИРОВАН</b> ✅
-═══════════════════════════
+                f"""✅ <b>ЧЕК АКТИВИРОВАН</b>
 
-<blockquote>✅ <b>Чек активирован успешно!</b> 🎉</blockquote>
+✅ <b>Чек активирован успешно!</b> 🎉
 
 <b>💰 НАЧИСЛЕНИЕ:</b>
-<blockquote>{result_message}
-Ваш новый баланс: {format_usdt(user_info['balance'])}</blockquote>
+{result_message}
+Ваш новый баланс: {format_usdt(user_info['balance'])}
 
-<blockquote>🎯 <b>Теперь вы можете выводить {CURRENCY}!</b></blockquote>""",
+🎯 <b>Теперь вы можете выводить {CURRENCY}!</b>""",
                 parse_mode='HTML'
             )
         else:
             bot.send_message(
                 message.chat.id,
-                f"""═══════════════════════════
-✅ <b>ЧЕК АКТИВИРОВАН</b> ✅
-═══════════════════════════
+                f"""✅ <b>ЧЕК АКТИВИРОВАН</b>
 
-<blockquote>✅ {result_message}</blockquote>""",
+✅ {result_message}""",
                 parse_mode='HTML'
             )
     else:
         bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-❌ <b>ОШИБКА АКТИВАЦИИ</b> ❌
-═══════════════════════════
+            f"""❌ <b>ОШИБКА АКТИВАЦИИ</b>
 
-<blockquote>❌ <b>Не удалось активировать чек:</b></blockquote>
+❌ <b>Не удалось активировать чек:</b>
 
 {result_message}""",
             parse_mode='HTML'
         )
 
-@bot.message_handler(func=lambda message: message.text == "📋 Мои заявки")
+@bot.message_handler(func=lambda message: message.text == "📋 Заявки")
 def my_withdrawals_command(message):
     # Проверяем подписку на каналы
     if REQUIRED_CHANNELS:
@@ -3363,21 +3154,17 @@ def my_withdrawals_command(message):
     withdrawals = get_user_withdrawals(user_id, 10)
 
     if not withdrawals:
-        withdrawals_text = """═══════════════════════════
-📋 <b>МОИ ЗАЯВКИ НА ВЫВОД</b> 📋
-═══════════════════════════
+        withdrawals_text = f"""📋 <b>МОИ ЗАЯВКИ</b>
 
-<blockquote>У вас еще нет заявок на вывод.</blockquote>
+У вас еще нет заявок.
 
 <b>💰 СОЗДАНИЕ ПЕРВОЙ ЗАЯВКИ:</b>
-<blockquote>1. Нажмите "💰 Вывод USDT"
+1. Нажмите "💰 Вывод"
 2. Выберите сумму (от {format_usdt(get_setting('min_withdrawal', MIN_WITHDRAWAL))})
 3. Укажите ваш @username
-4. Ожидайте подтверждения от администратора</blockquote>"""
+4. Ожидайте подтверждения"""
     else:
-        withdrawals_text = """═══════════════════════════
-📋 <b>МОИ ЗАЯВКИ НА ВЫВОД</b> 📋
-═══════════════════════════\n\n"""
+        withdrawals_text = """📋 <b>МОИ ЗАЯВКИ</b>\n\n"""
 
         for i, w in enumerate(withdrawals, 1):
             status_emoji = "⏳" if w['status'] == 'pending' else "✅" if w['status'] == 'approved' else "❌"
@@ -3393,8 +3180,6 @@ def my_withdrawals_command(message):
 
             withdrawals_text += '\n'
 
-        withdrawals_text += '<b>💡 СТАТУСЫ:</b>\n<blockquote>⏳ - На рассмотрении\n✅ - Одобрено\n❌ - Отклонено</blockquote>'
-
     bot.send_message(
         message.chat.id,
         withdrawals_text,
@@ -3402,7 +3187,7 @@ def my_withdrawals_command(message):
         reply_markup=create_main_menu()
     )
 
-@bot.message_handler(func=lambda message: message.text == "📊 Моя статистика")
+@bot.message_handler(func=lambda message: message.text == "📊 Статистика")
 def stats_command(message):
     # Проверяем подписку на каналы
     if REQUIRED_CHANNELS:
@@ -3428,25 +3213,23 @@ def stats_command(message):
         earned_from_refs = referrals_count * referral_reward
         min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
 
-        stats_text = f"""═══════════════════════════
-📊 <b>ВАША СТАТИСТИКА</b> 📊
-═══════════════════════════
+        stats_text = f"""📊 <b>ВАША СТАТИСТИКА</b>
 
-<b>💰 ФИНАНСОВАЯ ИНФОРМАЦИЯ:</b>
-<blockquote>Ваш баланс: {format_usdt(user_info['balance'])}
-Выведено: {format_usdt(total_withdrawn)}
-Заработано с рефералов: {format_usdt(earned_from_refs)}</blockquote>
+<b>💰 ФИНАНСЫ:</b>
+├ Баланс: {format_usdt(user_info['balance'])}
+├ Выведено: {format_usdt(total_withdrawn)}
+└ Заработано с реф: {format_usdt(earned_from_refs)}
 
-<b>👥 РЕФЕРАЛЬНАЯ СТАТИСТИКА:</b>
-<blockquote>Приглашено друзей: {referrals_count}
-Награда за реферала: {format_usdt(referral_reward)}
-До следующей награды: 1 друг</blockquote>
+<b>👥 РЕФЕРАЛЬНАЯ:</b>
+├ Приглашено: {referrals_count}
+├ Награда: {format_usdt(referral_reward)}
+└ До след. награды: 1 друг
 
 <b>💸 ВЫВОД:</b>
-<blockquote>Минимальный вывод: {format_usdt(min_withdrawal)}
-Доступно для вывода: {format_usdt(user_info['balance'])}</blockquote>
+├ Мин. сумма: {format_usdt(min_withdrawal)}
+└ Доступно: {format_usdt(user_info['balance'])}
 
-<blockquote>🎯 <b>Приглашайте друзей и зарабатывайте {format_usdt(referral_reward)} за каждого!</b></blockquote>"""
+🎯 <b>Приглашайте друзей и зарабатывайте {format_usdt(referral_reward)}!</b>"""
 
         bot.send_message(
             message.chat.id,
@@ -3454,7 +3237,7 @@ def stats_command(message):
             parse_mode='HTML'
         )
 
-@bot.message_handler(func=lambda message: message.text == "🏆 Топ рефереров")
+@bot.message_handler(func=lambda message: message.text == "🏆 Топ")
 def top_command(message):
     # Проверяем подписку на каналы
     if REQUIRED_CHANNELS:
@@ -3473,13 +3256,11 @@ def top_command(message):
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
     if top_users:
-        top_text = f"""═══════════════════════════
-🏆 <b>ТОП 10 РЕФЕРЕРОВ</b> 🏆
-═══════════════════════════
+        top_text = f"""🏆 <b>ТОП 10 РЕФЕРЕРОВ</b>
 
-<blockquote><b>🏆 Топ 10 рефереров (по количеству приглашенных друзей)</b></blockquote>
+<b>🏆 Топ 10 (по приглашенным)</b>
 
-<blockquote>Награда за каждого реферала: {format_usdt(referral_reward)}</blockquote>\n\n"""
+Награда за реферала: {format_usdt(referral_reward)}\n\n"""
 
         medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 
@@ -3498,10 +3279,9 @@ def top_command(message):
             earned = referrals * referral_reward
 
             top_text += f'{medal} <b>{username}</b>\n'
-            top_text += f'<b>👥 Рефералов:</b> {referrals} | <b>💰 Заработано:</b> {format_usdt(earned)}\n'
-            top_text += f'<b>💵 Баланс:</b> {format_usdt(balance)}\n\n'
+            top_text += f'<b>👥 Рефералов:</b> {referrals} | <b>💰 Заработано:</b> {format_usdt(earned)}\n\n'
 
-        top_text += '<blockquote>🎯 <b>Приглашайте друзей и попадите в топ!</b></blockquote>'
+        top_text += '🎯 <b>Приглашайте друзей и попадите в топ!</b>'
 
         bot.send_message(
             message.chat.id,
@@ -3511,15 +3291,13 @@ def top_command(message):
     else:
         bot.send_message(
             message.chat.id,
-            f"""═══════════════════════════
-🏆 <b>ТОП РЕФЕРЕРОВ</b> 🏆
-═══════════════════════════
+            f"""🏆 <b>ТОП РЕФЕРЕРОВ</b>
 
-<blockquote>🏆 <b>Топ рефереров</b></blockquote>
+🏆 <b>Топ рефереров</b>
 
-<blockquote>Пока никто не пригласил друзей. Будьте первым!</blockquote>
+Пока никто не пригласил друзей. Будьте первым!
 
-<blockquote>Награда за каждого реферала: {format_usdt(referral_reward)}</blockquote>""",
+Награда за реферала: {format_usdt(referral_reward)}""",
             parse_mode='HTML'
         )
 
@@ -3534,38 +3312,34 @@ def copy_link_callback(call):
 
             bot.answer_callback_query(
                 call.id,
-                f"Ссылка скопирована в буфер обмена! Отправьте ее другу.",
+                f"Ссылка скопирована!",
                 show_alert=False
             )
 
             bot.send_message(
                 call.message.chat.id,
-                f"""═══════════════════════════
-📋 <b>КОПИРОВАНИЕ ССЫЛКИ</b> 📋
-═══════════════════════════
+                f"""📋 <b>КОПИРОВАНИЕ ССЫЛКИ</b>
 
-<blockquote><b>📋 Ваша ссылка для копирования:</b></blockquote>
+<b>📋 Ваша ссылка:</b>
 
-<blockquote><code>{referral_link}</code></blockquote>
+<code>{referral_link}</code>
 
-<blockquote>💡 <b>Скопируйте и отправьте другу</b></blockquote>""",
+💡 <b>Скопируйте и отправьте другу</b>""",
                 parse_mode='HTML'
             )
         except ValueError:
-            bot.answer_callback_query(call.id, "Ошибка при обработке ссылки", show_alert=True)
+            bot.answer_callback_query(call.id, "Ошибка", show_alert=True)
 
 @bot.message_handler(commands=['invite'])
 def invite_link_command(message):
     user_id = message.from_user.id
     referral_link = generate_referral_link(user_id)
 
-    invite_text = f"""═══════════════════════════
-🔗 <b>РЕФЕРАЛЬНАЯ ССЫЛКА</b> 🔗
-═══════════════════════════
+    invite_text = f"""🔗 <b>РЕФЕРАЛЬНАЯ ССЫЛКА</b>
 
-<blockquote><b>🔗 Ваша реферальная ссылка:</b></blockquote>
+<b>🔗 Ваша ссылка:</b>
 
-<blockquote><code>{referral_link}</code></blockquote>"""
+<code>{referral_link}</code>"""
 
     bot.send_message(
         message.chat.id,
@@ -3612,18 +3386,16 @@ def send_daily_notifications():
                     if user_info and user_info['balance'] >= min_withdrawal:
                         bot.send_message(
                             user_id,
-                            f"""═══════════════════════════
-💰 <b>ДОСТАТОЧНО {CURRENCY}</b> 💰
-═══════════════════════════
+                            f"""💰 <b>ДОСТАТОЧНО {CURRENCY}</b>
 
-<blockquote><b>💰 У вас достаточно {CURRENCY} для вывода!</b></blockquote>
+<b>💰 У вас достаточно {CURRENCY} для вывода!</b>
 
-<b>💰 ИНФОРМАЦИЯ О БАЛАНСЕ:</b>
-<blockquote>Ваш баланс: {format_usdt(user_info['balance'])}
-Минимальная сумма вывода: {format_usdt(min_withdrawal)}</blockquote>
+<b>💰 ИНФОРМАЦИЯ:</b>
+├ Ваш баланс: {format_usdt(user_info['balance'])}
+└ Мин. сумма: {format_usdt(min_withdrawal)}
 
-<blockquote>🎯 <b>Вы можете вывести свои {CURRENCY}!</b>
-Нажмите "💰 Вывод {CURRENCY}" в меню</blockquote>""",
+🎯 <b>Вы можете вывести свои {CURRENCY}!</b>
+Нажмите "💰 Вывод" в меню""",
                             parse_mode='HTML'
                         )
                 except:
@@ -3672,21 +3444,19 @@ if __name__ == "__main__":
 
     try:
         bot_info = bot.get_me()
-        print(f"👤 Имя бота: @{bot_info.username}")
-        print(f"🌐 Вебхук URL: {WEBHOOK_URL}{WEBHOOK_PATH}")
+        print(f"👤 Бот: @{bot_info.username}")
+        print(f"🌐 Вебхук: {WEBHOOK_URL}{WEBHOOK_PATH}")
         print(f"💵 Валюта: {CURRENCY}")
         print(f"💰 Мин. вывод: {get_setting('min_withdrawal', MIN_WITHDRAWAL)} {CURRENCY}")
-        print(f"🎁 Награда за реферала: {get_setting('referral_reward', REFERRAL_REWARD)} {CURRENCY}")
-        print(f"👋 Бонус рефералу: {get_setting('referral_welcome_bonus', REFERRAL_WELCOME_BONUS)} {CURRENCY}")
-        print(f"📺 Обязательных каналов: {len(REQUIRED_CHANNELS)}")
-        print(f"🔗 Простых ссылок: {len(SIMPLE_LINKS)}")
+        print(f"🎁 Награда: {get_setting('referral_reward', REFERRAL_REWARD)} {CURRENCY}")
+        print(f"📺 Каналов: {len(REQUIRED_CHANNELS)} обяз. + {len(SIMPLE_LINKS)} простых")
         print(f"👑 Админов: {len(ADMIN_IDS)}")
 
         # Устанавливаем вебхук
         set_webhook()
 
     except Exception as e:
-        print(f"⚠️ Не удалось получить информацию о боте: {e}")
+        print(f"⚠️ Ошибка: {e}")
 
     print("=" * 50)
 
