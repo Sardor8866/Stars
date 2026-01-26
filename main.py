@@ -39,7 +39,42 @@ ADMIN_IDS = [8118184388]
 REQUIRED_CHANNELS = []  # Каналы с обязательной подпиской
 
 # Хранение капчи
-user_captcha = {}  # {user_id: {'answer': correct_answer}}
+user_captcha = {}  # {user_id: {'correct_emoji': emoji, 'attempts': 0}}
+
+# Список эмоджи для капчи
+EMOJI_LIST = ['😀', '😂', '😍', '😎', '🤔', '😴', '🥳', '🤯', '😱', '🤮', 
+              '👻', '💀', '👽', '🤖', '🎃', '👾', '🤠', '😈', '👑', '💩',
+              '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯',
+              '🦁', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🐤', '🦆',
+              '🦅', '🦉', '🦇', '🐺', '🐗', '🐴', '🦄', '🐝', '🪱', '🐛',
+              '🦋', '🐌', '🐞', '🐜', '🪰', '🪲', '🪳', '🦟', '🦗', '🕷️',
+              '🦂', '🐢', '🐍', '🦎', '🦖', '🦕', '🐙', '🦑', '🦐', '🦞',
+              '🦀', '🐡', '🐠', '🐟', '🐬', '🐳', '🐋', '🦈', '🐊', '🐅',
+              '🐆', '🦓', '🦍', '🦧', '🦣', '🐘', '🦛', '🦏', '🐪', '🐫',
+              '🦒', '🦘', '🦬', '🐃', '🐂', '🐄', '🐎', '🐖', '🐏', '🐑',
+              '🦙', '🐐', '🦌', '🐕', '🐩', '🦮', '🐕‍🦺', '🐈', '🐈‍⬛', '🪶',
+              '🐓', '🦃', '🦤', '🦚', '🦜', '🦢', '🦩', '🕊️', '🐇', '🦝',
+              '🦨', '🦡', '🦫', '🦦', '🦥', '🐁', '🐀', '🐿️', '🦔', '🐾',
+              '🐉', '🐲', '🌵', '🎄', '🌲', '🌳', '🌴', '🌱', '🌿', '☘️',
+              '🍀', '🎍', '🪴', '🎋', '🍃', '🍂', '🍁', '🍄', '🐚', '🪨',
+              '🌾', '💐', '🌷', '🌹', '🥀', '🌺', '🌸', '🌼', '🌻', '🌞',
+              '🌝', '🌛', '🌜', '🌚', '🌕', '🌖', '🌗', '🌘', '🌑', '🌒',
+              '🌓', '🌔', '🌙', '🌎', '🌍', '🌏', '🪐', '💫', '⭐', '🌟',
+              '✨', '⚡', '☄️', '💥', '🔥', '🌪️', '🌈', '☀️', '🌤️', '⛅',
+              '🌥️', '☁️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️', '❄️', '☃️', '⛄',
+              '🌬️', '💨', '💧', '💦', '☔', '☂️', '🌊', '🌫️', '🍏', '🍎',
+              '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍈', '🍒',
+              '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦', '🥬',
+              '🥒', '🌶️', '🫑', '🌽', '🥕', '🫒', '🧄', '🧅', '🥔', '🍠',
+              '🥐', '🥯', '🍞', '🥖', '🥨', '🧀', '🥚', '🍳', '🧈', '🥞',
+              '🧇', '🥓', '🥩', '🍗', '🍖', '🦴', '🌭', '🍔', '🍟', '🍕',
+              '🫓', '🥪', '🥙', '🧆', '🌮', '🌯', '🫔', '🥗', '🥘', '🫕',
+              '🥫', '🍝', '🍜', '🍲', '🍛', '🍣', '🍱', '🥟', '🦪', '🍤',
+              '🍙', '🍚', '🍘', '🍥', '🥠', '🥮', '🍢', '🍡', '🍧', '🍨',
+              '🍦', '🥧', '🧁', '🍰', '🎂', '🍮', '🍭', '🍬', '🍫', '🍿',
+              '🍩', '🍪', '🌰', '🥜', '🍯', '🥛', '🍼', '🫖', '☕', '🍵',
+              '🧃', '🥤', '🍶', '🍺', '🍻', '🥂', '🍷', '🥃', '🍸', '🍹',
+              '🧉', '🍾', '🧊', '🥄', '🍴', '🍽️', '🥣', '🥡', '🥢', '🧂']
 
 # ========== УТИЛИТЫ ==========
 def sanitize_text(text):
@@ -50,6 +85,59 @@ def sanitize_text(text):
     text = html.escape(text)
     text = ' '.join(text.split())
     return text
+
+# ========== ФУНКЦИИ ДЛЯ КАПЧИ ==========
+def generate_emoji_captcha():
+    """Генерация капчи с эмоджи"""
+    # Выбираем случайный эмоджи
+    correct_emoji = random.choice(EMOJI_LIST)
+    
+    # Создаем список из 4 эмоджи (1 правильный + 3 случайных)
+    emoji_options = [correct_emoji]
+    
+    # Добавляем 3 случайных уникальных эмоджи (не совпадающих с правильным)
+    while len(emoji_options) < 4:
+        random_emoji = random.choice(EMOJI_LIST)
+        if random_emoji not in emoji_options:
+            emoji_options.append(random_emoji)
+    
+    # Перемешиваем варианты
+    random.shuffle(emoji_options)
+    
+    # Запоминаем индекс правильного ответа
+    correct_index = emoji_options.index(correct_emoji)
+    
+    return correct_emoji, emoji_options, correct_index
+
+def check_captcha_required(user_id):
+    """Проверка, требуется ли капча пользователю"""
+    # Пропускаем админов
+    if user_id in ADMIN_IDS:
+        return False
+    
+    # Проверяем, есть ли уже решенная капча
+    if user_id in user_captcha and user_captcha[user_id].get('solved', False):
+        return False
+    
+    return True
+
+def create_captcha_keyboard(emoji_options):
+    """Создание клавиатуры для капчи"""
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    
+    # Создаем кнопки с эмоджи
+    buttons = []
+    for i, emoji in enumerate(emoji_options):
+        buttons.append(types.InlineKeyboardButton(
+            emoji,
+            callback_data=f"captcha_{i}"
+        ))
+    
+    # Располагаем кнопки в 2 ряда
+    for i in range(0, 4, 2):
+        keyboard.add(buttons[i], buttons[i + 1])
+    
+    return keyboard
 
 # ========== ФУНКЦИИ ДЛЯ USDT ==========
 def format_usdt(amount):
@@ -65,36 +153,6 @@ def format_usdt_short(amount):
         return f"{amount:.2f}" if amount != int(amount) else f"{int(amount)}"
     else:
         return f"{amount:.3f}"
-
-# ========== ФУНКЦИИ ДЛЯ КАПЧИ ==========
-def generate_captcha():
-    """Генерация простой математической капчи (только + и -)"""
-    operations = ['+', '-']
-    op = random.choice(operations)
-    
-    if op == '+':
-        a = random.randint(1, 20)
-        b = random.randint(1, 20)
-        answer = a + b
-    else:  # '-'
-        a = random.randint(10, 30)
-        b = random.randint(1, a-1)
-        answer = a - b
-    
-    question = f"{a}{op}{b}"
-    return question, answer
-
-def check_captcha_required(user_id):
-    """Проверка, требуется ли капча пользователю"""
-    # Пропускаем админов
-    if user_id in ADMIN_IDS:
-        return False
-    
-    # Проверяем, есть ли уже решенная капча
-    if user_id in user_captcha and user_captcha[user_id].get('solved', False):
-        return False
-    
-    return True
 
 # ========== ФУНКЦИИ ДЛЯ РАБОТЫ С КАНАЛАМИ ==========
 def check_user_subscription(user_id, channel_id):
@@ -280,7 +338,7 @@ def init_db():
 def load_channels_from_db():
     """Загрузка каналов из базы данных при запуске"""
     global REQUIRED_CHANNELS
-    REQUIRED_CHANNELS = []  # Очищаем список перед загрузкой
+    REQUIRED_CHANNELS = []  # Очищаем список перед загрузкаой
 
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -645,28 +703,33 @@ def create_withdrawal_keyboard():
 
     return keyboard
 
-# ========== ОСНОВНЫЕ КОМАНДЫ ==========
+# ========== ОСНОВНЫЕ КОМАНДЫ С КАПЧЕЙ ==========
 @bot.message_handler(commands=['start'])
 def start_command(message):
     user_id = message.from_user.id
-    username = sanitize_text(message.from_user.username) if message.from_user.username else ""
-    full_name = sanitize_text(message.from_user.full_name) if message.from_user.full_name else f"User_{user_id}"
-
+    
     # Проверяем требования для доступа
     access_status = check_access_required(user_id)
     
     if access_status == 'captcha':
         # Показываем капчу
-        question, answer = generate_captcha()
+        correct_emoji, emoji_options, correct_index = generate_emoji_captcha()
+        
         user_captcha[user_id] = {
-            'answer': answer,
-            'question': question,
+            'correct_emoji': correct_emoji,
+            'correct_index': correct_index,
+            'emoji_options': emoji_options,
+            'attempts': 0,
             'solved': False
         }
         
+        captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
+        
         bot.send_message(
             message.chat.id,
-            f"Решите капчу: {question}=?"
+            captcha_text,
+            parse_mode='HTML',
+            reply_markup=create_captcha_keyboard(emoji_options)
         )
         return
     
@@ -684,11 +747,14 @@ def start_command(message):
             return
     
     # Если дошли сюда, значит доступ разрешен
+    username = sanitize_text(message.from_user.username) if message.from_user.username else ""
+    full_name = sanitize_text(message.from_user.full_name) if message.from_user.full_name else f"User_{user_id}"
+    
+    referrer_id = None
     if len(message.text.split()) > 1:
         start_param = message.text.split()[1]
         
         if start_param.startswith('ref_'):
-            referrer_id = None
             try:
                 referrer_id = int(start_param.split('_')[1])
                 if referrer_id == user_id:
@@ -705,11 +771,8 @@ def start_command(message):
             except ValueError:
                 referrer_id = None
 
-            register_user(user_id, username, full_name, referrer_id)
-        else:
-            register_user(user_id, username, full_name, None)
-    else:
-        register_user(user_id, username, full_name, None)
+    # Регистрируем пользователя
+    register_user(user_id, username, full_name, referrer_id)
 
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
@@ -733,59 +796,64 @@ def start_command(message):
         reply_markup=create_main_menu()
     )
 
-# ========== ОБРАБОТЧИК ВСЕХ СООБЩЕНИЙ ДЛЯ ПРОВЕРКИ КАПЧИ ==========
-@bot.message_handler(func=lambda message: True, content_types=['text'])
-def handle_all_messages(message):
-    user_id = message.from_user.id
+@bot.callback_query_handler(func=lambda call: call.data.startswith('captcha_'))
+def handle_captcha_callback(call):
+    """Обработчик капчи"""
+    user_id = call.from_user.id
     
-    # Пропускаем команды
-    if message.text.startswith('/'):
-        bot.process_new_messages([message])
+    if user_id not in user_captcha:
+        bot.answer_callback_query(call.id, "❌ Капча устарела, начните заново")
         return
     
-    # Проверяем, решает ли пользователь капчу
-    if user_id in user_captcha and not user_captcha[user_id].get('solved', False):
+    selected_index = int(call.data.replace('captcha_', ''))
+    captcha_data = user_captcha[user_id]
+    
+    if selected_index == captcha_data['correct_index']:
+        # Правильный ответ
+        user_captcha[user_id]['solved'] = True
+        
         try:
-            user_answer = int(message.text.strip())
-            correct_answer = user_captcha[user_id]['answer']
-            
-            if user_answer == correct_answer:
-                # Капча решена правильно
-                user_captcha[user_id]['solved'] = True
-                
-                # Проверяем подписки
-                if REQUIRED_CHANNELS:
-                    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
-                    if not all_subscribed:
-                        # Показываем каналы для подписки
-                        is_subscribed, subscription_data = check_subscription_required(user_id)
-                        if not is_subscribed:
-                            channels_text, keyboard = subscription_data
-                            bot.send_message(
-                                message.chat.id,
-                                channels_text,
-                                parse_mode='HTML',
-                                reply_markup=keyboard
-                            )
-                            return
-                
-                # Если подписки не требуются или уже подписан
-                # Регистрируем пользователя если еще не зарегистрирован
-                username = sanitize_text(message.from_user.username) if message.from_user.username else ""
-                full_name = sanitize_text(message.from_user.full_name) if message.from_user.full_name else f"User_{user_id}"
-                
-                conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-                user = cursor.fetchone()
-                conn.close()
-                
-                if not user:
-                    register_user(user_id, username, full_name, None)
-                
-                # Показываем главное меню
-                referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-                welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
+            bot.edit_message_text(
+                "✅ <b>Капча пройдена!</b>",
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode='HTML'
+            )
+        except:
+            pass
+        
+        # Проверяем подписки
+        if REQUIRED_CHANNELS:
+            all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+            if not all_subscribed:
+                # Показываем каналы для подписки
+                is_subscribed, subscription_data = check_subscription_required(user_id)
+                if not is_subscribed:
+                    channels_text, keyboard = subscription_data
+                    bot.send_message(
+                        call.message.chat.id,
+                        channels_text,
+                        parse_mode='HTML',
+                        reply_markup=keyboard
+                    )
+                    return
+        
+        # Регистрируем пользователя если еще не зарегистрирован
+        username = sanitize_text(call.from_user.username) if call.from_user.username else ""
+        full_name = sanitize_text(call.from_user.full_name) if call.from_user.full_name else f"User_{user_id}"
+        
+        conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            register_user(user_id, username, full_name, None)
+        
+        # Показываем главное меню
+        referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+        welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
 
 ✨ <b>Добро пожаловать, {full_name}!</b>
 
@@ -798,46 +866,51 @@ def handle_all_messages(message):
 <b>👇 НАВИГАЦИЯ:</b>
 Используйте кнопки ниже:"""
 
-                bot.send_message(
-                    message.chat.id,
-                    welcome_text,
-                    parse_mode='HTML',
-                    reply_markup=create_main_menu()
-                )
-            else:
-                # Неправильный ответ - новый пример
-                question, answer = generate_captcha()
-                user_captcha[user_id] = {
-                    'answer': answer,
-                    'question': question,
-                    'solved': False
-                }
-                
-                bot.send_message(
-                    message.chat.id,
-                    f"Решите капчу: {question}=?"
-                )
-        except ValueError:
-            # Если введено не число
-            question, answer = generate_captcha()
+        bot.send_message(
+            call.message.chat.id,
+            welcome_text,
+            parse_mode='HTML',
+            reply_markup=create_main_menu()
+        )
+    else:
+        # Неправильный ответ
+        captcha_data['attempts'] += 1
+        
+        if captcha_data['attempts'] >= 3:
+            # Слишком много попыток - новая капча
+            correct_emoji, emoji_options, correct_index = generate_emoji_captcha()
+            
             user_captcha[user_id] = {
-                'answer': answer,
-                'question': question,
+                'correct_emoji': correct_emoji,
+                'correct_index': correct_index,
+                'emoji_options': emoji_options,
+                'attempts': 0,
                 'solved': False
             }
             
-            bot.send_message(
-                message.chat.id,
-                f"Решите капчу: {question}=?"
-            )
-        return
-    
-    # Если не капча, обрабатываем как обычно
-    bot.process_new_messages([message])
+            captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
+            
+            try:
+                bot.edit_message_text(
+                    captcha_text,
+                    call.message.chat.id,
+                    call.message.message_id,
+                    parse_mode='HTML',
+                    reply_markup=create_captcha_keyboard(emoji_options)
+                )
+            except:
+                bot.send_message(
+                    call.message.chat.id,
+                    captcha_text,
+                    parse_mode='HTML',
+                    reply_markup=create_captcha_keyboard(emoji_options)
+                )
+        else:
+            bot.answer_callback_query(call.id, "❌ Неправильно, попробуйте еще раз")
 
 # ========== ОБРАБОТЧИКИ КНОПОК ГЛАВНОГО МЕНЮ ==========
-@bot.message_handler(func=lambda message: message.text == "👤Профиль")
-def profile_command(message):
+@bot.message_handler(func=lambda message: message.text in ["👤Профиль", "👨‍💻Информация о проекте", "💸Заработать", "🎁Ежедневный бонус", "🆘Тех. поддержка"])
+def handle_main_menu(message):
     user_id = message.from_user.id
     
     # Проверяем требования для доступа
@@ -845,18 +918,26 @@ def profile_command(message):
     
     if access_status == 'captcha':
         # Показываем капчу
-        question, answer = generate_captcha()
+        correct_emoji, emoji_options, correct_index = generate_emoji_captcha()
+        
         user_captcha[user_id] = {
-            'answer': answer,
-            'question': question,
+            'correct_emoji': correct_emoji,
+            'correct_index': correct_index,
+            'emoji_options': emoji_options,
+            'attempts': 0,
             'solved': False
         }
         
+        captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
+        
         bot.send_message(
             message.chat.id,
-            f"Решите капчу: {question}=?"
+            captcha_text,
+            parse_mode='HTML',
+            reply_markup=create_captcha_keyboard(emoji_options)
         )
         return
+    
     elif access_status == 'subscription':
         # Показываем каналы для подписки
         is_subscribed, subscription_data = check_subscription_required(user_id)
@@ -869,7 +950,22 @@ def profile_command(message):
                 reply_markup=keyboard
             )
             return
+    
+    # Если доступ разрешен, обрабатываем команду
+    if message.text == "👤Профиль":
+        profile_command(message)
+    elif message.text == "👨‍💻Информация о проекте":
+        project_info_command(message)
+    elif message.text == "💸Заработать":
+        invite_command(message)
+    elif message.text == "🎁Ежедневный бонус":
+        daily_bonus_command(message)
+    elif message.text == "🆘Тех. поддержка":
+        support_command(message)
 
+def profile_command(message):
+    user_id = message.from_user.id
+    
     user_info = get_user_info(user_id)
     
     if user_info:
@@ -906,40 +1002,9 @@ def profile_command(message):
             parse_mode='HTML'
         )
 
-@bot.message_handler(func=lambda message: message.text == "👨‍💻Информация о проекте")
 def project_info_command(message):
     """Информация о проекте как на скрине с кнопками"""
     user_id = message.from_user.id
-    
-    # Проверяем требования для доступа
-    access_status = check_access_required(user_id)
-    
-    if access_status == 'captcha':
-        # Показываем капчу
-        question, answer = generate_captcha()
-        user_captcha[user_id] = {
-            'answer': answer,
-            'question': question,
-            'solved': False
-        }
-        
-        bot.send_message(
-            message.chat.id,
-            f"Решите капчу: {question}=?"
-        )
-        return
-    elif access_status == 'subscription':
-        # Показываем каналы для подписки
-        is_subscribed, subscription_data = check_subscription_required(user_id)
-        if not is_subscribed:
-            channels_text, keyboard = subscription_data
-            bot.send_message(
-                message.chat.id,
-                channels_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-            return
     
     stats = get_bot_stats()
     
@@ -1013,40 +1078,9 @@ def show_top_callback(call):
             parse_mode='HTML'
         )
 
-@bot.message_handler(func=lambda message: message.text == "💸Заработать")
 def invite_command(message):
     user_id = message.from_user.id
     
-    # Проверяем требования для доступа
-    access_status = check_access_required(user_id)
-    
-    if access_status == 'captcha':
-        # Показываем капчу
-        question, answer = generate_captcha()
-        user_captcha[user_id] = {
-            'answer': answer,
-            'question': question,
-            'solved': False
-        }
-        
-        bot.send_message(
-            message.chat.id,
-            f"Решите капчу: {question}=?"
-        )
-        return
-    elif access_status == 'subscription':
-        # Показываем каналы для подписки
-        is_subscribed, subscription_data = check_subscription_required(user_id)
-        if not is_subscribed:
-            channels_text, keyboard = subscription_data
-            bot.send_message(
-                message.chat.id,
-                channels_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-            return
-
     user_info = get_user_info(user_id)
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
@@ -1076,122 +1110,6 @@ def invite_command(message):
             parse_mode='HTML'
         )
 
-@bot.message_handler(func=lambda message: message.text == "🎁Ежедневный бонус")
-def daily_bonus_command(message):
-    """Обработчик ежедневного бонуса"""
-    user_id = message.from_user.id
-    
-    # Проверяем требования для доступа
-    access_status = check_access_required(user_id)
-    
-    if access_status == 'captcha':
-        # Показываем капчу
-        question, answer = generate_captcha()
-        user_captcha[user_id] = {
-            'answer': answer,
-            'question': question,
-            'solved': False
-        }
-        
-        bot.send_message(
-            message.chat.id,
-            f"Решите капчу: {question}=?"
-        )
-        return
-    elif access_status == 'subscription':
-        # Показываем каналы для подписки
-        is_subscribed, subscription_data = check_subscription_required(user_id)
-        if not is_subscribed:
-            channels_text, keyboard = subscription_data
-            bot.send_message(
-                message.chat.id,
-                channels_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-            return
-    
-    # Проверяем, может ли пользователь получить бонус
-    can_claim, remaining_time = can_claim_daily_bonus(user_id)
-    
-    daily_bonus_amount = get_setting('daily_bonus', DAILY_BONUS_AMOUNT)
-    
-    if can_claim:
-        # Выдаем бонус
-        bonus_amount, new_balance = claim_daily_bonus(user_id)
-        
-        bonus_text = f"""<b>🎁 Вам был начислен ежедневный бонус в размере 0.1 USDT!</b>"""
-    else:
-        # Показываем оставшееся время
-        bonus_text = f"""<b>⏳ Вы уже получали бонус сегодня</b>"""
-    
-    bot.send_message(
-        message.chat.id,
-        bonus_text,
-        parse_mode='HTML',
-        reply_markup=create_main_menu()
-    )
-
-@bot.message_handler(func=lambda message: message.text == "🆘Тех. поддержка")
-def support_command(message):
-    """🆘Техническая поддержка"""
-    user_id = message.from_user.id
-    
-    # Проверяем требования для доступа
-    access_status = check_access_required(user_id)
-    
-    if access_status == 'captcha':
-        # Показываем капчу
-        question, answer = generate_captcha()
-        user_captcha[user_id] = {
-            'answer': answer,
-            'question': question,
-            'solved': False
-        }
-        
-        bot.send_message(
-            message.chat.id,
-            f"Решите капчу: {question}=?"
-        )
-        return
-    elif access_status == 'subscription':
-        # Показываем каналы для подписки
-        is_subscribed, subscription_data = check_subscription_required(user_id)
-        if not is_subscribed:
-            channels_text, keyboard = subscription_data
-            bot.send_message(
-                message.chat.id,
-                channels_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-            return
-    
-    support_text = f"""<b>Тех. поддержка</b>
-
-<b>👨‍💻 Техническая поддержка</b>
-
-<b>📞 Связь:</b>
-Для связи с поддержкой используйте:
-• @{DEVELOPER_USERNAME}
-• Отправить сообщение администратору
-
-<b>⏱️ Время ответа:</b>
-Обычно в течение 24 часов
-
-<b>⚠️ Проблемы:</b>
-• Не работает бот
-• Не приходят бонусы
-• Проблемы с выводом
-• Другие вопросы"""
-
-    bot.send_message(
-        message.chat.id,
-        support_text,
-        parse_mode='HTML'
-    )
-
-# ========== ФУНКЦИИ ВЫВОДА ==========
 def withdrawal_command(message):
     user_id = message.from_user.id
     user_info = get_user_info(user_id)
@@ -1438,6 +1356,59 @@ Username: <b>@{username}</b>
             reply_markup=create_main_menu()
         )
 
+def support_command(message):
+    """🆘Техническая поддержка"""
+    user_id = message.from_user.id
+    
+    support_text = f"""<b>Тех. поддержка</b>
+
+<b>👨‍💻 Техническая поддержка</b>
+
+<b>📞 Связь:</b>
+Для связи с поддержкой используйте:
+• @{DEVELOPER_USERNAME}
+• Отправить сообщение администратору
+
+<b>⏱️ Время ответа:</b>
+Обычно в течение 24 часов
+
+<b>⚠️ Проблемы:</b>
+• Не работает бот
+• Не приходят бонусы
+• Проблемы с выводом
+• Другие вопросы"""
+
+    bot.send_message(
+        message.chat.id,
+        support_text,
+        parse_mode='HTML'
+    )
+
+def daily_bonus_command(message):
+    """Обработчик ежедневного бонуса"""
+    user_id = message.from_user.id
+    
+    # Проверяем, может ли пользователь получить бонус
+    can_claim, remaining_time = can_claim_daily_bonus(user_id)
+    
+    daily_bonus_amount = get_setting('daily_bonus', DAILY_BONUS_AMOUNT)
+    
+    if can_claim:
+        # Выдаем бонус
+        bonus_amount, new_balance = claim_daily_bonus(user_id)
+        
+        bonus_text = f"""<b>🎁 Вам был начислен ежедневный бонус в размере 0.1 USDT!</b>"""
+    else:
+        # Показываем оставшееся время
+        bonus_text = f"""<b>⏳ Вы уже получали бонус сегодня</b>"""
+    
+    bot.send_message(
+        message.chat.id,
+        bonus_text,
+        parse_mode='HTML',
+        reply_markup=create_main_menu()
+    )
+
 # ========== CALLBACK ДЛЯ ПРОВЕРКИ ПОДПИСКИ ==========
 @bot.callback_query_handler(func=lambda call: call.data == "check_subscription_after")
 def check_subscription_after_callback(call):
@@ -1462,16 +1433,23 @@ def check_subscription_after_callback(call):
 
         # Проверяем капчу
         if check_captcha_required(user_id):
-            question, answer = generate_captcha()
+            correct_emoji, emoji_options, correct_index = generate_emoji_captcha()
+            
             user_captcha[user_id] = {
-                'answer': answer,
-                'question': question,
+                'correct_emoji': correct_emoji,
+                'correct_index': correct_index,
+                'emoji_options': emoji_options,
+                'attempts': 0,
                 'solved': False
             }
             
+            captcha_text = f"<b>🔒 ВЫБЕРИТЕ ЭМОДЖИ:</b>\n\n<b>{correct_emoji}</b>"
+            
             bot.send_message(
                 call.message.chat.id,
-                f"Решите капчу: {question}=?"
+                captcha_text,
+                parse_mode='HTML',
+                reply_markup=create_captcha_keyboard(emoji_options)
             )
             return
 
