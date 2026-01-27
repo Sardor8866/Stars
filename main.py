@@ -225,26 +225,41 @@ def check_all_subscriptions(user_id):
 
     return all_subscribed, not_subscribed
 
+def has_real_required_channels():
+    """Проверка, есть ли реальные обязательные каналы"""
+    if not REQUIRED_CHANNELS:
+        return False
+    
+    # Проверяем, есть ли хотя бы один реальный канал
+    for channel in REQUIRED_CHANNELS:
+        if channel.get('channel_id') and str(channel['channel_id']).strip():
+            channel_id = str(channel['channel_id']).strip()
+            if channel_id and channel_id not in ['', '0', 'None', 'null']:
+                return True
+    
+    return False
+
 def check_access_required(user_id):
     """Проверка всех требований для доступа"""
     # Сначала проверяем капчу
     if check_captcha_required(user_id):
         return 'captcha'
     
-    # Затем проверяем подписки
-    if not REQUIRED_CHANNELS:
-        return 'ok'
-
-    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+    # Затем проверяем подписки ТОЛЬКО если есть реальные обязательные каналы
+    if has_real_required_channels():
+        all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+        
+        if all_subscribed:
+            return 'ok'
+        else:
+            return 'subscription'
     
-    if all_subscribed:
-        return 'ok'
-    else:
-        return 'subscription'
+    return 'ok'  # Если нет обязательных каналов - доступ разрешен
 
 def check_subscription_required(user_id):
     """Проверка обязательных подписок"""
-    if not REQUIRED_CHANNELS:
+    # Проверяем только если есть реальные обязательные каналы
+    if not has_real_required_channels():
         return True, None
 
     all_subscribed, not_subscribed = check_all_subscriptions(user_id)
@@ -447,21 +462,26 @@ def register_user(user_id, username, full_name, referrer_id=None):
 
         conn.commit()
         
-        # ✅ ИСПРАВЛЕНО: Убрано автоматическое начисление реферального бонуса
-        # Бонус будет начисляться позже в зависимости от наличия каналов
+        # ✅ ИСПРАВЛЕНО: Начисляем реферальный бонус сразу только если НЕТ реальных обязательных каналов
+        if referrer_id and not has_real_required_channels():
+            print(f"🔍 Реферер {referrer_id}, пользователь {user_id} - нет обязательных каналов, начисляю бонус сразу")
+            check_and_reward_referrer(user_id)
     else:
         # Если пользователь уже есть, обновляем реферера если нужно
         if referrer_id and not user[3]:  # user[3] это referred_by
             cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
             conn.commit()
-            # ✅ ИСПРАВЛЕНО: Убрано автоматическое начисление реферального бонуса
-            # Бонус будет начисляться позже в зависимости от наличия каналов
+            # ✅ ИСПРАВЛЕНО: Начисляем реферальный бонус сразу только если НЕТ реальных обязательных каналов
+            if not has_real_required_channels():
+                print(f"🔍 Реферер {referrer_id}, пользователь {user_id} (уже был) - нет обязательных каналов, начисляю бонус сразу")
+                check_and_reward_referrer(user_id)
     
     conn.close()
 
 def check_and_reward_referrer(user_id):
     """Проверяет подписки пользователя и начисляет бонус рефереру если нужно"""
     print(f"🔍 Проверка реферального бонуса для пользователя {user_id}")
+    print(f"📺 Реальных обязательных каналов: {has_real_required_channels()}")
     
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -493,68 +513,122 @@ def check_and_reward_referrer(user_id):
     
     print(f"🔍 Реферер пользователя {user_id}: {referrer_id}")
     
-    # Проверяем подписки пользователя
-    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
-    
-    if not all_subscribed:
+    # ✅ ИСПРАВЛЕНО: Если нет реальных обязательных каналов - начисляем бонус сразу
+    if not has_real_required_channels():
+        print(f"✅ Нет обязательных каналов, начисляю бонус рефереру {referrer_id} за пользователя {user_id}")
+        
+        # Начисляем бонус рефереру
+        referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+        
+        cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (referral_reward, referrer_id))
+        cursor.execute("UPDATE users SET referral_paid = 1 WHERE user_id = ?", (user_id,))
+        
+        cursor.execute('''
+            INSERT INTO transactions (user_id, amount, type, description)
+            VALUES (?, ?, ?, ?)
+        ''', (referrer_id, referral_reward, 'referral_bonus', f'Награда за приглашение пользователя {user_id}'))
+        
+        conn.commit()
+        
+        # Получаем новый баланс реферера
+        cursor.execute("SELECT balance FROM users WHERE user_id = ?", (referrer_id,))
+        new_balance_result = cursor.fetchone()
+        new_balance = new_balance_result[0] if new_balance_result else 0
+        
         conn.close()
-        print(f"❌ Пользователь {user_id} не подписан на все каналы")
-        return False
-    
-    print(f"✅ Пользователь {user_id} подписан на все каналы")
-    
-    # Начисляем бонус рефереру
-    referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-    
-    print(f"💰 Начисляем {referral_reward} {CURRENCY} рефереру {referrer_id} за пользователя {user_id}")
-    
-    cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (referral_reward, referrer_id))
-    cursor.execute("UPDATE users SET referral_paid = 1 WHERE user_id = ?", (user_id,))
-    
-    cursor.execute('''
-        INSERT INTO transactions (user_id, amount, type, description)
-        VALUES (?, ?, ?, ?)
-    ''', (referrer_id, referral_reward, 'referral_bonus', f'Награда за приглашение пользователя {user_id}'))
-    
-    conn.commit()
-    
-    # Получаем новый баланс реферера
-    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (referrer_id,))
-    new_balance_result = cursor.fetchone()
-    new_balance = new_balance_result[0] if new_balance_result else 0
-    
-    conn.close()
-    
-    # Уведомляем реферера
-    try:
-        bot.send_message(
-            referrer_id,
-            f"""🎉 По вашей ссылке зарегистрировался новый пользователь!
+        
+        # Уведомляем реферера
+        try:
+            bot.send_message(
+                referrer_id,
+                f"""🎉 По вашей ссылке зарегистрировался новый пользователь!
 На ваш баланс зачислено 0.1 USDT""",
-            parse_mode='HTML'
-        )
-        print(f"✅ Уведомление отправлено рефереру {referrer_id}")
-    except Exception as e:
-        print(f"❌ Не удалось отправить уведомление рефереру {referrer_id}: {e}")
-    
-    # Уведомляем пользователя
-    try:
-        bot.send_message(
-            user_id,
-            f"""✅ <b>ВЫ ПОДПИСАЛИСЬ НА ВСЕ КАНАЛЫ!</b>
+                parse_mode='HTML'
+            )
+            print(f"✅ Уведомление отправлено рефереру {referrer_id}")
+        except Exception as e:
+            print(f"❌ Не удалось отправить уведомление рефереру {referrer_id}: {e}")
+        
+        # Уведомляем пользователя (только если есть каналы)
+        if has_real_required_channels():
+            try:
+                bot.send_message(
+                    user_id,
+                    f"""✅ <b>ВЫ ПОДПИСАЛИСЬ НА ВСЕ КАНАЛЫ!</b>
 
 Спасибо за участие в программе! 🎉""",
-            parse_mode='HTML'
-        )
-        print(f"✅ Уведомление отправлено пользователю {user_id}")
-    except Exception as e:
-        print(f"❌ Не удалось отправить уведомление пользователю {user_id}: {e}")
-    
-    return True
+                    parse_mode='HTML'
+                )
+                print(f"✅ Уведомление отправлено пользователю {user_id}")
+            except Exception as e:
+                print(f"❌ Не удалось отправить уведомление пользователю {user_id}: {e}")
+        
+        return True
+    else:
+        # ✅ ИСПРАВЛЕНО: Если есть обязательные каналы - проверяем подписки
+        print(f"📺 Проверяю подписки пользователя {user_id} на обязательные каналы")
+        all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+        
+        if not all_subscribed:
+            conn.close()
+            print(f"❌ Пользователь {user_id} не подписан на все каналы")
+            return False
+        
+        print(f"✅ Пользователь {user_id} подписан на все каналы")
+        
+        # Начисляем бонус рефереру
+        referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
+        
+        print(f"💰 Начисляем {referral_reward} {CURRENCY} рефереру {referrer_id} за пользователя {user_id}")
+        
+        cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (referral_reward, referrer_id))
+        cursor.execute("UPDATE users SET referral_paid = 1 WHERE user_id = ?", (user_id,))
+        
+        cursor.execute('''
+            INSERT INTO transactions (user_id, amount, type, description)
+            VALUES (?, ?, ?, ?)
+        ''', (referrer_id, referral_reward, 'referral_bonus', f'Награда за приглашение пользователя {user_id}'))
+        
+        conn.commit()
+        
+        # Получаем новый баланс реферера
+        cursor.execute("SELECT balance FROM users WHERE user_id = ?", (referrer_id,))
+        new_balance_result = cursor.fetchone()
+        new_balance = new_balance_result[0] if new_balance_result else 0
+        
+        conn.close()
+        
+        # Уведомляем реферера
+        try:
+            bot.send_message(
+                referrer_id,
+                f"""🎉 По вашей ссылке зарегистрировался новый пользователь!
+На ваш баланс зачислено 0.1 USDT""",
+                parse_mode='HTML'
+            )
+            print(f"✅ Уведомление отправлено рефереру {referrer_id}")
+        except Exception as e:
+            print(f"❌ Не удалось отправить уведомление рефереру {referrer_id}: {e}")
+        
+        # Уведомляем пользователя
+        try:
+            bot.send_message(
+                user_id,
+                f"""✅ <b>ВЫ ПОДПИСАЛИСЬ НА ВСЕ КАНАЛЫ!</b>
+
+Спасибо за участие в программе! 🎉""",
+                parse_mode='HTML'
+            )
+            print(f"✅ Уведомление отправлено пользователю {user_id}")
+        except Exception as e:
+            print(f"❌ Не удалось отправить уведомление пользователю {user_id}: {e}")
+        
+        return True
 
 def check_all_users_subscriptions():
     """Проверяет подписки всех пользователей и начисляет реферальные бонусы"""
     print("🔍 Запускаю проверку всех реферальных бонусов...")
+    print(f"📺 Реальных обязательных каналов: {has_real_required_channels()}")
     
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -919,9 +993,8 @@ def start_command(message):
     # Регистрируем пользователя
     register_user(user_id, username, full_name, referrer_id)
     
-    # ✅ ИСПРАВЛЕНО: Начисляем реферальный бонус сразу только если НЕТ обязательных каналов
-    if not REQUIRED_CHANNELS and referrer_id:
-        check_and_reward_referrer(user_id)
+    # ✅ ИСПРАВЛЕНО: Реферальный бонус теперь начисляется внутри register_user
+    # в зависимости от наличия реальных обязательных каналов
 
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
@@ -1024,8 +1097,8 @@ def handle_captcha_callback(call):
         except:
             pass
         
-        # Проверяем подписки
-        if REQUIRED_CHANNELS:
+        # ✅ ИСПРАВЛЕНО: Проверяем подписки только если есть реальные обязательные каналы
+        if has_real_required_channels():
             all_subscribed, not_subscribed = check_all_subscriptions(user_id)
             if not all_subscribed:
                 # Показываем каналы для подписки
@@ -1067,7 +1140,7 @@ def handle_captcha_callback(call):
             conn.commit()
         else:
             # ✅ ИСПРАВЛЕНО: Начисляем реферальный бонус для существующего пользователя если нет каналов
-            if not REQUIRED_CHANNELS:
+            if not has_real_required_channels():
                 check_and_reward_referrer(user_id)
         
         conn.close()
@@ -2657,6 +2730,7 @@ if __name__ == "__main__":
         print(f"🎁 Награда за реферала: {get_setting('referral_reward', REFERRAL_REWARD)} {CURRENCY}")
         print(f"🎁 Ежед. бонус: {get_setting('daily_bonus', DAILY_BONUS_AMOUNT)} {CURRENCY}")
         print(f"📺 Каналов: {len(REQUIRED_CHANNELS)} обязательных")
+        print(f"📺 Реальных обязательных каналов: {has_real_required_channels()}")
         print(f"👑 Админов: {len(ADMIN_IDS)}")
         print(f"👨‍💻 Разработчик: @{DEVELOPER_USERNAME}")
 
