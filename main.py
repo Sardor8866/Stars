@@ -309,6 +309,7 @@ def init_db():
             balance REAL DEFAULT 0,
             registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_daily_bonus TIMESTAMP DEFAULT NULL,
+            referral_paid INTEGER DEFAULT 0,
             FOREIGN KEY (referred_by) REFERENCES users(user_id)
         )
     ''')
@@ -435,8 +436,8 @@ def register_user(user_id, username, full_name, referrer_id=None):
         safe_full_name = sanitize_text(full_name) if full_name else f"User_{user_id}"
 
         cursor.execute('''
-            INSERT INTO users (user_id, username, full_name, referred_by, balance)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO users (user_id, username, full_name, referred_by, balance, referral_paid)
+            VALUES (?, ?, ?, ?, ?, 0)
         ''', (user_id, safe_username, safe_full_name, referrer_id, 0))
 
         cursor.execute('''
@@ -446,17 +447,16 @@ def register_user(user_id, username, full_name, referrer_id=None):
 
         conn.commit()
         
-        # ЗАПУСКАЕМ ОТЛОЖЕННУЮ ПРОВЕРКУ РЕФЕРАЛЬНОГО БОНУСА
+        # Сразу проверяем реферальный бонус синхронно
         if referrer_id:
-            # Запускаем проверку через 10 секунд (пользователь успеет подписаться)
-            threading.Timer(10.0, check_and_reward_referrer, args=[user_id]).start()
+            check_and_reward_referrer(user_id)
     else:
         # Если пользователь уже есть, обновляем реферера если нужно
         if referrer_id and not user[3]:  # user[3] это referred_by
             cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
             conn.commit()
-            # Запускаем проверку реферального бонуса
-            threading.Timer(10.0, check_and_reward_referrer, args=[user_id]).start()
+            # Сразу проверяем реферальный бонус
+            check_and_reward_referrer(user_id)
     
     conn.close()
 
@@ -468,7 +468,7 @@ def check_and_reward_referrer(user_id):
     cursor = conn.cursor()
     
     # Получаем информацию о пользователе и его реферере
-    cursor.execute("SELECT referred_by, username, full_name FROM users WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT referred_by, username, full_name, referral_paid FROM users WHERE user_id = ?", (user_id,))
     result = cursor.fetchone()
     
     if not result:
@@ -479,6 +479,7 @@ def check_and_reward_referrer(user_id):
     referrer_id = result[0]
     username = result[1]
     full_name = result[2]
+    referral_paid = result[3]
     
     if not referrer_id:
         conn.close()
@@ -486,6 +487,12 @@ def check_and_reward_referrer(user_id):
         return False
     
     print(f"🔍 Реферер пользователя {user_id}: {referrer_id}")
+    
+    # Проверяем, был ли уже начислен бонус
+    if referral_paid == 1:
+        conn.close()
+        print(f"⚠️ Бонус за пользователя {user_id} уже был начислен")
+        return False
     
     # Проверяем подписки пользователя
     all_subscribed, not_subscribed = check_all_subscriptions(user_id)
@@ -497,26 +504,13 @@ def check_and_reward_referrer(user_id):
     
     print(f"✅ Пользователь {user_id} подписан на все каналы")
     
-    # Проверяем, был ли уже начислен бонус за этого реферала
-    cursor.execute('''
-        SELECT COUNT(*) FROM transactions 
-        WHERE user_id = ? AND type = 'referral_bonus' 
-        AND description LIKE ?
-    ''', (referrer_id, f'%приглашение пользователя {user_id}%'))
-    
-    already_rewarded = cursor.fetchone()[0] > 0
-    
-    if already_rewarded:
-        conn.close()
-        print(f"⚠️ Бонус за пользователя {user_id} уже был начислен рефереру {referrer_id}")
-        return False
-    
     # Начисляем бонус рефереру
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
     
     print(f"💰 Начисляем {referral_reward} {CURRENCY} рефереру {referrer_id} за пользователя {user_id}")
     
     cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (referral_reward, referrer_id))
+    cursor.execute("UPDATE users SET referral_paid = 1 WHERE user_id = ?", (user_id,))
     
     cursor.execute('''
         INSERT INTO transactions (user_id, amount, type, description)
@@ -576,14 +570,15 @@ def check_all_users_subscriptions():
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # Получаем всех пользователей с реферерами
+    # Получаем всех пользователей с реферерами и неоплаченными бонусами
     cursor.execute('''
-        SELECT user_id, referred_by FROM users WHERE referred_by IS NOT NULL
+        SELECT user_id, referred_by FROM users 
+        WHERE referred_by IS NOT NULL AND referral_paid = 0
     ''')
     users_with_referrers = cursor.fetchall()
     conn.close()
     
-    print(f"🔍 Найдено {len(users_with_referrers)} пользователей с реферерами")
+    print(f"🔍 Найдено {len(users_with_referrers)} пользователей с неоплаченными реферальными бонусами")
     
     rewarded_count = 0
     for user_id, referrer_id in users_with_referrers:
@@ -600,11 +595,11 @@ def get_user_info(user_id):
     cursor.execute('''
         SELECT u.user_id, u.username, u.full_name, u.referred_by, u.balance,
                u.registration_date, COUNT(r.user_id) as referrals_count,
-               u.last_daily_bonus
+               u.last_daily_bonus, u.referral_paid
         FROM users u
         LEFT JOIN users r ON u.user_id = r.referred_by
         WHERE u.user_id = ?
-        GROUP BY u.user_id, u.username, u.full_name, u.referred_by, u.balance, u.registration_date, u.last_daily_bonus
+        GROUP BY u.user_id, u.username, u.full_name, u.referred_by, u.balance, u.registration_date, u.last_daily_bonus, u.referral_paid
     ''', (user_id,))
 
     user = cursor.fetchone()
@@ -621,7 +616,8 @@ def get_user_info(user_id):
             'referred_by': user[3],
             'balance': user[4],
             'referrals_count': user[6] if user[6] else 0,
-            'last_daily_bonus': user[7]
+            'last_daily_bonus': user[7],
+            'referral_paid': user[8]
         }
     return None
 
@@ -1059,10 +1055,25 @@ def handle_captcha_callback(call):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         user = cursor.fetchone()
-        conn.close()
         
         if not user:
-            register_user(user_id, username, full_name, None)
+            # Регистрируем пользователя
+            cursor.execute('''
+                INSERT INTO users (user_id, username, full_name, balance, referral_paid)
+                VALUES (?, ?, ?, ?, 0)
+            ''', (user_id, username, full_name, 0))
+            
+            cursor.execute('''
+                INSERT INTO transactions (user_id, amount, type, description)
+                VALUES (?, ?, ?, ?)
+            ''', (user_id, 0, 'registration', 'Регистрация через капчу'))
+            
+            conn.commit()
+        else:
+            # Проверяем реферальный бонус для существующего пользователя
+            check_and_reward_referrer(user_id)
+        
+        conn.close()
         
         # Показываем главное меню
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
@@ -1352,7 +1363,7 @@ def go_to_withdraw_callback(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('withdraw_'))
 def handle_withdrawal_callback(call):
-    """Обработчик инлайн-кнопок вывода"""
+    """Обработчик инлайн1кнопок вывода"""
     user_id = call.from_user.id
     user_info = get_user_info(user_id)
     min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
@@ -1652,8 +1663,8 @@ def check_subscription_after_callback(call):
         # Если пользователь не зарегистрирован, регистрируем
         if not user:
             cursor.execute('''
-                INSERT INTO users (user_id, username, full_name, balance)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO users (user_id, username, full_name, balance, referral_paid)
+                VALUES (?, ?, ?, ?, 0)
             ''', (user_id, username, full_name, 0))
             
             cursor.execute('''
