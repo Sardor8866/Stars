@@ -970,18 +970,7 @@ def start_command(message):
 
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
-    welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
-
-✨ <b>Добро пожаловать, {full_name}!</b>
-
-За каждого приглашенного друга: {format_usdt(referral_reward)}
-
-Средства зачисляются автоматически после подписки на все каналы.
-
-Приглашай друзей и зарабатывай!
-
-<b>👇 НАВИГАЦИЯ:</b>
-Используйте кнопки ниже:"""
+    welcome_text = f"""<b>"⌨️Меню"</b>"""
 
     bot.send_message(
         message.chat.id,
@@ -1124,18 +1113,7 @@ def handle_captcha_callback(call):
         
         # Показываем главное меню
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-        welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
-
-✨ <b>Добро пожаловать, {full_name}!</b>
-
-За каждого приглашенного друга: {format_usdt(referral_reward)}
-
-Средства зачисляются автоматически после подписки на все каналы.
-
-Приглашай друзей и зарабатывай!
-
-<b>👇 НАВИГАЦИЯ:</b>
-Используйте кнопки ниже:"""
+        welcome_text = f"""<b>"⌨️Меню"</b>"""
 
         bot.send_message(
             call.message.chat.id,
@@ -1318,7 +1296,9 @@ def invite_command(message):
         referrals_count = user_info['referrals_count']
         earned_from_refs = referrals_count * referral_reward
 
-        invite_text = f"""💹После приглашения, средства будут автоматически зачислены на твой баланс.
+        invite_text = f"""💸 За каждого приглашенного друга ты получишь 0.1 USDT.
+
+<b>📊 После приглашения, средства будут автоматически зачислены на твой баланс.</b>
 
 <b>🔗Ссылка для приглашения:</b>
 <code>{referral_link}</code>
@@ -1592,21 +1572,10 @@ def support_command(message):
     
     support_text = f"""<b>Тех. поддержка</b>
 
-<b>👨‍💻 Техническая поддержка</b>
+<b>❓ При обнаружении багов/ошибок/недоработок обращайтесь к администрации.</b>
 
-<b>📞 Связь:</b>
-Для связи с поддержкой используйте:
-• @{DEVELOPER_USERNAME}
-• Отправить сообщение администратору
-
-<b>⏱️ Время ответа:</b>
-Обычно в течение 24 часов
-
-<b>⚠️ Проблемы:</b>
-• Не работает бот
-• Не приходят бонусы
-• Проблемы с выводом
-• Другие вопросы"""
+<b>Администрация — @kenzooov:</b>
+<b>Ответ поступит в самое ближайшее время 😉:</b>"""
 
     bot.send_message(
         message.chat.id,
@@ -1697,18 +1666,7 @@ def check_subscription_after_callback(call):
 
         # Показываем главное меню
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-        welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
-
-✨ <b>Добро пожаловал, {full_name}!</b>
-
-За каждого приглашенного друга: {format_usdt(referral_reward)}
-
-Средства зачисляются автоматически после подписки на все каналы.
-
-Приглашай друзей и зарабатывай!
-
-<b>👇 НАВИГАЦИЯ:</b>
-Используйте кнопки ниже:"""
+        welcome_text = f"""<b>"⌨️Меню"</b>"""
 
         bot.send_message(
             call.message.chat.id,
@@ -1952,8 +1910,10 @@ def manage_withdrawals_command(message):
         withdrawal_id, user_id, username, amount, status, admin_message, created_at, processed_at, full_name, user_balance = w
 
         safe_name = sanitize_text(full_name) if full_name else f"User_{user_id}"
+        safe_username = sanitize_text(username) if username else "Не указан"
         withdrawals_text += f'<b>#{withdrawal_id}</b> - {format_usdt(amount)}\n'
         withdrawals_text += f'👤 {safe_name} (ID: {user_id})\n'
+        withdrawals_text += f'📱 Username: @{safe_username}\n'
         withdrawals_text += f'💰 Баланс: {format_usdt(user_balance)}\n\n'
 
         keyboard.add(
@@ -2553,11 +2513,14 @@ def process_approve_withdrawal(message, withdrawal_id):
 
             conn.commit()
 
+            safe_username = sanitize_text(username) if username else "Не указан"
             bot.send_message(
                 message.chat.id,
                 f"""✅ <b>ЗАЯВКА ОДОБРЕНА</b>
 
-✅ <b>Заявка #{withdrawal_id} одобрена!</b>""",
+✅ <b>Заявка #{withdrawal_id} одобрена!</b>
+📱 <b>Username пользователя:</b> @{safe_username}
+💰 <b>Сумма:</b> {format_usdt(amount)}""",
                 parse_mode='HTML'
             )
         else:
@@ -2647,11 +2610,14 @@ def process_reject_withdrawal(message, withdrawal_id):
 
             conn.commit()
 
+            safe_username = sanitize_text(username) if username else "Не указан"
             bot.send_message(
                 message.chat.id,
                 f"""❌ <b>ЗАЯВКА ОТКЛОНЕНА</b>
 
 ❌ <b>Заявка #{withdrawal_id} отклонена!</b>
+📱 <b>Username пользователя:</b> @{safe_username}
+💰 <b>Сумма:</b> {format_usdt(amount)}
 
 ⚠️ {CURRENCY} не возвращены пользователю.""",
                 parse_mode='HTML'
