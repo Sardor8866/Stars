@@ -916,28 +916,7 @@ def create_withdrawal_keyboard():
 def start_command(message):
     user_id = message.from_user.id
     
-    # Проверяем требования для доступа
-    access_status = check_access_required(user_id)
-    
-    if access_status == 'captcha':
-        # Показываем капчу
-        show_captcha(message.chat.id, user_id)
-        return
-    
-    elif access_status == 'subscription':
-        # Показываем каналы для подписки
-        is_subscribed, subscription_data = check_subscription_required(user_id)
-        if not is_subscribed:
-            channels_text, keyboard = subscription_data
-            bot.send_message(
-                message.chat.id,
-                channels_text,
-                parse_mode='HTML',
-                reply_markup=keyboard
-            )
-            return
-    
-    # Если дошли сюда, значит доступ разрешен
+    # ✅ ИСПРАВЛЕНО: Сначала получаем данные пользователя и referrer_id
     username = sanitize_text(message.from_user.username) if message.from_user.username else ""
     full_name = sanitize_text(message.from_user.full_name) if message.from_user.full_name else f"User_{user_id}"
     
@@ -962,8 +941,29 @@ def start_command(message):
             except ValueError:
                 referrer_id = None
 
-    # Регистрируем пользователя
+    # ✅ ИСПРАВЛЕНО: Регистрируем пользователя СРАЗУ, чтобы referrer_id был в базе
     register_user(user_id, username, full_name, referrer_id)
+    
+    # Проверяем требования для доступа
+    access_status = check_access_required(user_id)
+    
+    if access_status == 'captcha':
+        # Показываем капчу
+        show_captcha(message.chat.id, user_id)
+        return
+    
+    elif access_status == 'subscription':
+        # Показываем каналы для подписки
+        is_subscribed, subscription_data = check_subscription_required(user_id)
+        if not is_subscribed:
+            channels_text, keyboard = subscription_data
+            bot.send_message(
+                message.chat.id,
+                channels_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            return
     
     # ✅ ИСПРАВЛЕНО: Реферальный бонус теперь начисляется внутри register_user
     # в зависимости от наличия реальных обязательных каналов
