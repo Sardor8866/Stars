@@ -446,19 +446,16 @@ def register_user(user_id, username, full_name, referrer_id=None):
         ''', (user_id, 0, 'registration', 'Регистрация в боте'))
 
         conn.commit()
-        
-        # Сразу проверяем реферальный бонус синхронно
-        if referrer_id:
-            check_and_reward_referrer(user_id)
+        # НЕ проверяем реферальный бонус сразу - пользователь еще не подписался на каналы!
     else:
         # Если пользователь уже есть, обновляем реферера если нужно
         if referrer_id and not user[3]:  # user[3] это referred_by
             cursor.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
             conn.commit()
-            # Сразу проверяем реферальный бонус
-            check_and_reward_referrer(user_id)
+            # Тоже НЕ проверяем сразу - проверка будет при подписке на каналы
     
     conn.close()
+    print(f"✅ Пользователь {user_id} зарегистрирован с реферером {referrer_id}")
 
 def check_and_reward_referrer(user_id):
     """Проверяет подписки пользователя и начисляет бонус рефереру если нужно"""
@@ -519,7 +516,7 @@ def check_and_reward_referrer(user_id):
     
     conn.commit()
     
- # Получаем новый баланс реферера
+    # Получаем новый баланс реферера
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (referrer_id,))
     new_balance_result = cursor.fetchone()
     new_balance = new_balance_result[0] if new_balance_result else 0
@@ -538,20 +535,30 @@ def check_and_reward_referrer(user_id):
     except Exception as e:
         print(f"❌ Не удалось отправить уведомление рефереру {referrer_id}: {e}")
     
-    # Уведомляем пользователя
-    try:
-        bot.send_message(
-            user_id,
-            f"""✅ <b>ВЫ ПОДПИСАЛИСЬ НА ВСЕ КАНАЛЫ!</b>
-
-Спасибо за участие в программе! 🎉""",
-            parse_mode='HTML'
-        )
-        print(f"✅ Уведомление отправлено пользователю {user_id}")
-    except Exception as e:
-        print(f"❌ Не удалось отправить уведомление пользователю {user_id}: {e}")
-    
     return True
+
+def check_referral_on_login(user_id):
+    """Проверка реферального бонуса при входе пользователя"""
+    print(f"🔍 Проверка реферального бонуса при входе для пользователя {user_id}")
+    
+    # Проверяем, подписан ли пользователь на все каналы
+    all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+    
+    if all_subscribed:
+        # Если подписан на все каналы, проверяем реферальный бонус
+        result = check_and_reward_referrer(user_id)
+        if result:
+            # Уведомляем пользователя
+            try:
+                bot.send_message(
+                    user_id,
+                    """✅ <b>ВЫ ПОДПИСАЛИСЬ НА ВСЕ КАНАЛЫ!</b>
+
+Ваш реферер получил вознаграждение за вашу регистрацию! 🎉""",
+                    parse_mode='HTML'
+                )
+            except:
+                pass
 
 def check_all_users_subscriptions():
     """Проверяет подписки всех пользователей и начисляет реферальные бонусы"""
@@ -572,8 +579,14 @@ def check_all_users_subscriptions():
     
     rewarded_count = 0
     for user_id, referrer_id in users_with_referrers:
-        if check_and_reward_referrer(user_id):
-            rewarded_count += 1
+        # Проверяем подписки каждого пользователя
+        all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+        
+        if all_subscribed:
+            # Если подписан на все каналы, начисляем бонус
+            result = check_and_reward_referrer(user_id)
+            if result:
+                rewarded_count += 1
     
     print(f"🎁 Проверено {len(users_with_referrers)} пользователей, начислено {rewarded_count} бонусов")
 
@@ -920,6 +933,9 @@ def start_command(message):
     # Регистрируем пользователя
     register_user(user_id, username, full_name, referrer_id)
 
+    # Проверяем реферальный бонус при входе
+    check_referral_on_login(user_id)
+
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
     welcome_text = f"""✨ <b>ДОБРО ПОЖАЛОВАТЬ</b>
@@ -1059,11 +1075,11 @@ def handle_captcha_callback(call):
             ''', (user_id, 0, 'registration', 'Регистрация через капчу'))
             
             conn.commit()
-        else:
-            # Проверяем реферальный бонус для существующего пользователя
-            check_and_reward_referrer(user_id)
         
         conn.close()
+        
+        # Проверяем реферальный бонус после прохождения капчи
+        check_referral_on_login(user_id)
         
         # Показываем главное меню
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
@@ -1634,7 +1650,8 @@ def check_subscription_after_callback(call):
         
         conn.close()
         
-        # Проверяем и начисляем реферальный бонус
+        # Проверяем и начисляем реферальный бонус ТОЛЬКО ЗДЕСЬ
+        # когда пользователь точно подписался на все каналы
         check_and_reward_referrer(user_id)
 
         # Показываем главное меню
