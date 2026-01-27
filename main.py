@@ -481,7 +481,6 @@ def register_user(user_id, username, full_name, referrer_id=None):
 def check_and_reward_referrer(user_id):
     """Проверяет подписки пользователя и начисляет бонус рефереру если нужно"""
     print(f"🔍 Проверка реферального бонуса для пользователя {user_id}")
-    print(f"📺 Реальных обязательных каналов: {has_real_required_channels()}")
     
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -549,20 +548,6 @@ def check_and_reward_referrer(user_id):
         except Exception as e:
             print(f"❌ Не удалось отправить уведомление рефереру {referrer_id}: {e}")
         
-        # Уведомляем пользователя (только если есть каналы)
-        if has_real_required_channels():
-            try:
-                bot.send_message(
-                    user_id,
-                    f"""✅ <b>ВЫ ПОДПИСАЛИСЬ НА ВСЕ КАНАЛЫ!</b>
-
-Спасибо за участие в программе! 🎉""",
-                    parse_mode='HTML'
-                )
-                print(f"✅ Уведомление отправлено пользователю {user_id}")
-            except Exception as e:
-                print(f"❌ Не удалось отправить уведомление пользователю {user_id}: {e}")
-        
         return True
     else:
         # ✅ ИСПРАВЛЕНО: Если есть обязательные каналы - проверяем подписки
@@ -609,19 +594,6 @@ def check_and_reward_referrer(user_id):
             print(f"✅ Уведомление отправлено рефереру {referrer_id}")
         except Exception as e:
             print(f"❌ Не удалось отправить уведомление рефереру {referrer_id}: {e}")
-        
-        # Уведомляем пользователя
-        try:
-            bot.send_message(
-                user_id,
-                f"""✅ <b>ВЫ ПОДПИСАЛИСЬ НА ВСЕ КАНАЛЫ!</b>
-
-Спасибо за участие в программе! 🎉""",
-                parse_mode='HTML'
-            )
-            print(f"✅ Уведомление отправлено пользователю {user_id}")
-        except Exception as e:
-            print(f"❌ Не удалось отправить уведомление пользователю {user_id}: {e}")
         
         return True
 
@@ -1097,23 +1069,16 @@ def handle_captcha_callback(call):
         except:
             pass
         
-        # ✅ ИСПРАВЛЕНО: Проверяем подписки только если есть реальные обязательные каналы
-        if has_real_required_channels():
+        # ✅ ИСПРАВЛЕНО: Начисляем реферальный бонус сразу если нет обязательных каналов
+        if not has_real_required_channels():
+            print(f"✅ Нет обязательных каналов, начисляю реферальный бонус сразу")
+            check_and_reward_referrer(user_id)
+        else:
+            # Если есть каналы, проверяем подписки
             all_subscribed, not_subscribed = check_all_subscriptions(user_id)
-            if not all_subscribed:
-                # Показываем каналы для подписки
-                is_subscribed, subscription_data = check_subscription_required(user_id)
-                if not is_subscribed:
-                    channels_text, keyboard = subscription_data
-                    bot.send_message(
-                        call.message.chat.id,
-                        channels_text,
-                        parse_mode='HTML',
-                        reply_markup=keyboard
-                    )
-                    return
-            else:
+            if all_subscribed:
                 # ✅ ИСПРАВЛЕНО: Начисляем реферальный бонус если все подписки есть
+                print(f"✅ Все подписки есть, начисляю реферальный бонус")
                 check_and_reward_referrer(user_id)
         
         # Регистрируем пользователя если еще не зарегистрирован
@@ -1138,12 +1103,24 @@ def handle_captcha_callback(call):
             ''', (user_id, 0, 'registration', 'Регистрация через капчу'))
             
             conn.commit()
-        else:
-            # ✅ ИСПРАВЛЕНО: Начисляем реферальный бонус для существующего пользователя если нет каналов
-            if not has_real_required_channels():
-                check_and_reward_referrer(user_id)
         
         conn.close()
+        
+        # Проверяем, нужно ли показывать каналы для подписки
+        if has_real_required_channels():
+            all_subscribed, not_subscribed = check_all_subscriptions(user_id)
+            if not all_subscribed:
+                # Показываем каналы для подписки
+                is_subscribed, subscription_data = check_subscription_required(user_id)
+                if not is_subscribed:
+                    channels_text, keyboard = subscription_data
+                    bot.send_message(
+                        call.message.chat.id,
+                        channels_text,
+                        parse_mode='HTML',
+                        reply_markup=keyboard
+                    )
+                    return
         
         # Показываем главное меню
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
@@ -1684,7 +1661,8 @@ def check_subscription_after_callback(call):
         except:
             pass
 
-        # ✅ ИСПРАВЛЕНО: Начисляем реферальный бонус после успешной подписки
+        # ✅ ИСПРАВЛЕНО: Начисляем реферальный бонус сразу после успешной проверки подписок
+        print(f"✅ Пользователь {user_id} подписался на все каналы, начисляю реферальный бонус")
         check_and_reward_referrer(user_id)
 
         # Проверяем капчу
