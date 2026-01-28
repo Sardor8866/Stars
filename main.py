@@ -903,6 +903,10 @@ def create_withdrawal(user_id, invoice_link, amount):
         for admin_id in ADMIN_IDS:
             try:
                 keyboard = types.InlineKeyboardMarkup()
+                
+                # Кнопка со ссылкой на счет
+                keyboard.add(types.InlineKeyboardButton("💳 Открыть счет для оплаты", url=invoice))
+                
                 keyboard.add(
                     types.InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{withdrawal_id}"),
                     types.InlineKeyboardButton("❌ Отклонить", callback_data=f"admin_reject_{withdrawal_id}")
@@ -922,8 +926,12 @@ def create_withdrawal(user_id, invoice_link, amount):
 
 <b>👤 Пользователь:</b> @{username}
 <b>💰 Сумма:</b> {format_usdt(amount)}
-<b>🔗 Счет:</b> {safe_invoice}
-<b>🆔 ID заявки:</b> {withdrawal_id}""",
+<b>🆔 ID заявки:</b> {withdrawal_id}
+
+<b>🔗 Ссылка на счет:</b>
+<code>{safe_invoice}</code>
+
+<b>⚡️ Нажмите "Открыть счет" чтобы оплатить</b>""",
                     parse_mode='HTML',
                     reply_markup=keyboard
                 )
@@ -1085,6 +1093,154 @@ def create_withdrawal_keyboard():
     return keyboard
 
 # ========== ОСНОВНЫЕ КОМАНДЫ С КАПЧЕЙ ==========
+@bot.message_handler(commands=['check'])
+def check_referrals_command(message):
+    """Команда для проверки рефералов пользователя по username"""
+    # Только админы могут использовать эту команду
+    if message.from_user.id not in ADMIN_IDS:
+        bot.send_message(message.chat.id, "❌ У вас нет прав для использования этой команды")
+        return
+    
+    # Парсим команду
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.send_message(
+            message.chat.id,
+            """<b>📋 Команда /check</b>
+
+<b>Использование:</b>
+<code>/check @username</code>
+
+<b>Пример:</b>
+<code>/check @relessorg</code>
+
+Показывает список всех рефералов указанного пользователя.""",
+            parse_mode='HTML'
+        )
+        return
+    
+    # Получаем username (убираем @ если есть)
+    target_username = parts[1].strip().replace('@', '')
+    
+    # Ищем пользователя в базе
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT user_id, username, full_name, total_referrals FROM users WHERE username = ?", (target_username,))
+    user = cursor.fetchone()
+    
+    if not user:
+        conn.close()
+        bot.send_message(
+            message.chat.id,
+            f"""❌ <b>Пользователь не найден</b>
+
+Пользователь с username @{sanitize_text(target_username)} не найден в базе данных.""",
+            parse_mode='HTML'
+        )
+        return
+    
+    user_id, username, full_name, total_referrals = user
+    safe_username = sanitize_text(username) if username else "Не указан"
+    safe_full_name = sanitize_text(full_name) if full_name else f"User_{user_id}"
+    
+    # Получаем список рефералов
+    cursor.execute("""
+        SELECT user_id, username, full_name, balance, registration_date 
+        FROM users 
+        WHERE referrer_id = ?
+        ORDER BY registration_date DESC
+    """, (user_id,))
+    
+    referrals = cursor.fetchall()
+    conn.close()
+    
+    if not referrals or len(referrals) == 0:
+        bot.send_message(
+            message.chat.id,
+            f"""<b>👤 Информация о пользователе</b>
+
+<b>Username:</b> @{safe_username}
+<b>Имя:</b> {safe_full_name}
+<b>ID:</b> <code>{user_id}</code>
+<b>Рефералов:</b> 0
+
+<b>❌ У этого пользователя нет рефералов</b>""",
+            parse_mode='HTML'
+        )
+        return
+    
+    # Формируем список рефералов
+    referrals_text = f"""<b>👤 Информация о пользователе</b>
+
+<b>Username:</b> @{safe_username}
+<b>Имя:</b> {safe_full_name}
+<b>ID:</b> <code>{user_id}</code>
+<b>Рефералов:</b> {len(referrals)}
+
+<b>📋 Список рефералов:</b>\n\n"""
+    
+    for i, ref in enumerate(referrals, 1):
+        ref_id, ref_username, ref_full_name, ref_balance, ref_reg_date = ref
+        ref_safe_username = sanitize_text(ref_username) if ref_username else "Не указан"
+        ref_safe_full_name = sanitize_text(ref_full_name) if ref_full_name else f"User_{ref_id}"
+        
+        # Форматируем дату
+        try:
+            from datetime import datetime
+            date_obj = datetime.strptime(ref_reg_date, '%Y-%m-%d %H:%M:%S')
+            reg_date_str = date_obj.strftime('%d.%m.%Y')
+        except:
+            reg_date_str = ref_reg_date[:10]
+        
+        referrals_text += f"""<b>{i}.</b> @{ref_safe_username}
+   Имя: {ref_safe_full_name}
+   ID: <code>{ref_id}</code>
+   Баланс: {format_usdt(ref_balance)}
+   Дата: {reg_date_str}\n\n"""
+    
+    # Разбиваем на части если слишком длинное
+    if len(referrals_text) > 4000:
+        # Отправляем первую часть с заголовком
+        header_text = f"""<b>👤 Информация о пользователе</b>
+
+<b>Username:</b> @{safe_username}
+<b>Имя:</b> {safe_full_name}
+<b>ID:</b> <code>{user_id}</code>
+<b>Рефералов:</b> {len(referrals)}
+
+<b>📋 Список рефералов:</b>\n\n"""
+        
+        bot.send_message(message.chat.id, header_text, parse_mode='HTML')
+        
+        # Разбиваем рефералов на группы
+        refs_per_message = 20
+        for i in range(0, len(referrals), refs_per_message):
+            batch = referrals[i:i+refs_per_message]
+            batch_text = ""
+            
+            for j, ref in enumerate(batch, i+1):
+                ref_id, ref_username, ref_full_name, ref_balance, ref_reg_date = ref
+                ref_safe_username = sanitize_text(ref_username) if ref_username else "Не указан"
+                ref_safe_full_name = sanitize_text(ref_full_name) if ref_full_name else f"User_{ref_id}"
+                
+                try:
+                    from datetime import datetime
+                    date_obj = datetime.strptime(ref_reg_date, '%Y-%m-%d %H:%M:%S')
+                    reg_date_str = date_obj.strftime('%d.%m.%Y')
+                except:
+                    reg_date_str = ref_reg_date[:10]
+                
+                batch_text += f"""<b>{j}.</b> @{ref_safe_username}
+   Имя: {ref_safe_full_name}
+   ID: <code>{ref_id}</code>
+   Баланс: {format_usdt(ref_balance)}
+   Дата: {reg_date_str}\n\n"""
+            
+            bot.send_message(message.chat.id, batch_text, parse_mode='HTML')
+    else:
+        bot.send_message(message.chat.id, referrals_text, parse_mode='HTML')
+
 @bot.message_handler(commands=['start'])
 def start_command(message):
     user_id = message.from_user.id
@@ -1504,20 +1660,28 @@ def withdrawal_command(message):
         bot.send_message(message.chat.id, "❌ Ошибка: пользователь не найден")
         return
 
-    withdrawal_text = f"""<b>Вывод {CURRENCY}</b>
+    withdrawal_text = f"""<b>💸 Заявка на вывод</b>
 
 <b>Баланс:</b> {format_usdt(user_info['balance'])}
 <b>Мин. сумма:</b> {format_usdt(min_withdrawal)}
-<b>Время:</b> до 24 часов
+<b>Время обработки:</b> до 24 часов
 
-<b>Выберите сумму:</b>"""
+<b>Для вывода средств отправьте:</b>
+1. Сумму
+2. Ссылку на ваш счет в @send (/invoices)
 
-    bot.send_message(
+<b>Пример:</b>
+<code>5
+t.me/send?start=IVqhDHooVJKU</code>
+
+Отправьте сообщение в формате выше:"""
+
+    msg = bot.send_message(
         message.chat.id,
         withdrawal_text,
-        parse_mode='HTML',
-        reply_markup=create_withdrawal_keyboard()
+        parse_mode='HTML'
     )
+    bot.register_next_step_handler(msg, process_withdrawal_request)
 
 @bot.callback_query_handler(func=lambda call: call.data == "go_to_withdraw")
 def go_to_withdraw_callback(call):
@@ -1530,127 +1694,85 @@ def go_to_withdraw_callback(call):
         bot.answer_callback_query(call.id, "❌ Ошибка: пользователь не найден", show_alert=True)
         return
 
-    withdrawal_text = f"""<b>Вывод {CURRENCY}</b>
+    withdrawal_text = f"""<b>💸 Заявка на вывод</b>
 
 <b>Баланс:</b> {format_usdt(user_info['balance'])}
 <b>Мин. сумма:</b> {format_usdt(min_withdrawal)}
-<b>Время:</b> до 24 часов
+<b>Время обработки:</b> до 24 часов
 
-<b>Выберите сумму:</b>"""
+<b>Для вывода средств отправьте:</b>
+1. Сумму
+2. Ссылку на ваш счет в @send (/invoices)
 
-    try:
-        bot.edit_message_text(
-            withdrawal_text,
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode='HTML',
-            reply_markup=create_withdrawal_keyboard()
-        )
-    except:
-        bot.send_message(
-            call.message.chat.id,
-            withdrawal_text,
-            parse_mode='HTML',
-            reply_markup=create_withdrawal_keyboard()
-        )
+<b>Пример:</b>
+<code>5
+t.me/send?start=IVqhDHooVJKU</code>
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('withdraw_'))
-def handle_withdrawal_callback(call):
-    """Обработчик инлайн1кнопок вывода"""
-    user_id = call.from_user.id
+Отправьте сообщение в формате выше:"""
+
+    msg = bot.send_message(
+        call.message.chat.id,
+        withdrawal_text,
+        parse_mode='HTML'
+    )
+    bot.register_next_step_handler(msg, process_withdrawal_request)
+    bot.answer_callback_query(call.id)
+
+def process_withdrawal_request(message):
+    """Обработка заявки на вывод в формате: сумма + ссылка"""
+    user_id = message.from_user.id
     user_info = get_user_info(user_id)
     min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
 
     if not user_info:
-        bot.answer_callback_query(call.id, "❌ Ошибка: пользователь не найден")
+        bot.send_message(message.chat.id, "❌ Ошибка: пользователь не найден")
         return
 
-    action = call.data
+    # Парсим сообщение
+    lines = message.text.strip().split('\n')
+    
+    if len(lines) < 2:
+        bot.send_message(
+            message.chat.id,
+            """❌ <b>НЕВЕРНЫЙ ФОРМАТ</b>
 
-    if action == "withdraw_custom":
-        msg = bot.send_message(
-            call.message.chat.id,
-            f"""<b>ВЫВОД {CURRENCY}</b>
+Отправьте в формате:
+<code>5
+t.me/send?start=IVqhDHooVJKU</code>
 
-<b>Введите сумму для вывода</b>
-
-<b>Требования:</b>
-Мин. сумма: {format_usdt(min_withdrawal)}
-Введите сумму в {CURRENCY}:""",
+Первая строка - сумма, вторая - ссылка на счет""",
             parse_mode='HTML'
         )
-        bot.register_next_step_handler(msg, process_custom_withdrawal)
-        bot.answer_callback_query(call.id)
         return
 
-    if action.startswith("withdraw_"):
-        try:
-            amount_str = action.replace("withdraw_", "")
-            amount = float(amount_str) if '.' in amount_str else int(amount_str)
-        except:
-            bot.answer_callback_query(call.id, "❌ Неверная сумма")
-            return
-
-    if user_info['balance'] < amount:
-        bot.answer_callback_query(
-            call.id,
-            f"❌ Недостаточно {CURRENCY}! У вас {format_usdt(user_info['balance'])}",
-            show_alert=True
-        )
-        return
-
-    if amount < min_withdrawal:
-        bot.answer_callback_query(
-            call.id,
-            f"❌ Мин. сумма {format_usdt(min_withdrawal)}",
-            show_alert=True
-        )
-        return
-
-    user_data = {'amount': amount, 'user_id': user_id}
-
-    # Запрос ссылки на счет
-    msg = bot.send_message(
-        call.message.chat.id,
-        f"""<b>💸 Заявка на вывод</b>
-
-Для вывода средств отправьте:
-1. Сумму
-2. Ссылку на ваш счет в @send (/invoices)
-
-Пример:
-1. {amount}
-2. t.me/send?start=IVq (Ссылка на счет)""",
-        parse_mode='HTML'
-    )
-    bot.register_next_step_handler(msg, process_withdrawal_invoice, user_data)
-    bot.answer_callback_query(call.id)
-
-def process_custom_withdrawal(message):
     try:
-        amount = float(message.text)
+        amount = float(lines[0].strip())
+        invoice_link = lines[1].strip()
+    except:
+        bot.send_message(
+            message.chat.id,
+            """❌ <b>ОШИБКА ВВОДА</b>
 
-        min_withdrawal = get_setting('min_withdrawal', MIN_WITHDRAWAL)
-        if amount < min_withdrawal:
-            bot.send_message(
-                message.chat.id,
-                f"""❌ <b>ОШИБКА ВЫВОДА</b>
+Первая строка должна быть числом (сумма)!""",
+            parse_mode='HTML'
+        )
+        return
+
+    # Проверки
+    if amount < min_withdrawal:
+        bot.send_message(
+            message.chat.id,
+            f"""❌ <b>ОШИБКА ВЫВОДА</b>
 
 ❌ <b>Мин. сумма {format_usdt(min_withdrawal)}!</b>""",
-                parse_mode='HTML'
-            )
-            return
+            parse_mode='HTML'
+        )
+        return
 
-        user_info = get_user_info(message.from_user.id)
-
-        if not user_info:
-            bot.send_message(message.chat.id, "❌ Ошибка: пользователь не найден")
-            return
-
-        if user_info['balance'] < amount:
-            bot.send_message(
-                message.chat.id,
-                f"""❌ <b>ОШИБКА ВЫВОДА</b>
+    if user_info['balance'] < amount:
+        bot.send_message(
+            message.chat.id,
+            f"""❌ <b>ОШИБКА ВЫВОДА</b>
 
 ❌ <b>Недостаточно {CURRENCY}!</b>
 
@@ -1658,42 +1780,11 @@ def process_custom_withdrawal(message):
 Хотите вывести: {format_usdt(amount)}
 Ваш баланс: {format_usdt(user_info['balance'])}
 Не хватает: {format_usdt(amount - user_info['balance'])}""",
-                parse_mode='HTML'
-            )
-            return
-
-        user_data = {'amount': amount, 'user_id': message.from_user.id}
-
-        # Запрос ссылки на счет
-        msg = bot.send_message(
-            message.chat.id,
-            f"""<b>💸 Заявка на вывод</b>
-
-Для вывода средств отправьте:
-1. Сумму
-2. Ссылку на ваш счет в @send (/invoices)
-
-Пример:
-1. {amount}
-2. t.me/send?start=IVq (Ссылка на счет)""",
             parse_mode='HTML'
         )
-        bot.register_next_step_handler(msg, process_withdrawal_invoice, user_data)
+        return
 
-    except ValueError:
-        bot.send_message(
-            message.chat.id,
-            """❌ <b>ОШИБКА ВВОДА</b>
-
-❌ <b>Пожалуйста, введите число!</b>""",
-            parse_mode='HTML'
-        )
-
-def process_withdrawal_invoice(message, user_data):
-    invoice_link = sanitize_text(message.text.strip())
-
-    # Проверяем, что это похоже на ссылку
-    if not invoice_link or invoice_link == '':
+    if not invoice_link or len(invoice_link) < 5:
         bot.send_message(
             message.chat.id,
             """❌ <b>ОШИБКА ВВОДА</b>
@@ -1703,23 +1794,18 @@ def process_withdrawal_invoice(message, user_data):
         )
         return
 
-    amount = user_data['amount']
-    user_id = user_data['user_id']
-
-    # Создаем заявку с invoice_link вместо username
+    # Создаем заявку
     success, message_text = create_withdrawal(user_id, invoice_link, amount)
 
     if success:
-        user_info = get_user_info(user_id)
-        
-        # Получаем ID заявки из последней записи
+        # Получаем ID заявки
         conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
         cursor = conn.cursor()
         cursor.execute("SELECT withdrawal_id FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
         withdrawal_id = cursor.fetchone()[0]
         conn.close()
 
-        # Сообщение пользователю: заявка создана
+        # Сообщение пользователю
         bot.send_message(
             message.chat.id,
             f"""✅ <b>Заявка на вывод создана!</b>
@@ -1743,6 +1829,7 @@ def process_withdrawal_invoice(message, user_data):
             parse_mode='HTML',
             reply_markup=create_main_menu()
         )
+
 
 def support_command(message):
     """🆘Техническая поддержка"""
