@@ -1301,7 +1301,7 @@ def start_command(message):
 
     referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
 
-    welcome_text = f"""<b>"⌨️Меню"</b>"""
+    welcome_text = f"""<b>⌨️Меню</b>"""
 
     bot.send_message(
         message.chat.id,
@@ -1444,7 +1444,7 @@ def handle_captcha_callback(call):
         
         # Показываем главное меню
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-        welcome_text = f"""<b>"⌨️Меню"</b>"""
+        welcome_text = f"""<b>⌨️Меню</b>"""
 
         bot.send_message(
             call.message.chat.id,
@@ -1696,11 +1696,7 @@ def go_to_withdraw_callback(call):
         bot.answer_callback_query(call.id, "❌ Ошибка: пользователь не найден", show_alert=True)
         return
 
-    withdrawal_text = f"""<b>💸 Заявка на вывод</b>
-
-<b>Баланс:</b> {format_usdt(user_info['balance'])}
-<b>Мин. сумма:</b> {format_usdt(min_withdrawal)}
-<b>Время обработки:</b> до 24 часов
+    withdrawal_text = f"""<b>📤 Заявка на вывод</b>
 
 <b>Для вывода средств отправьте:</b>
 1. Сумму
@@ -1841,7 +1837,7 @@ def support_command(message):
 
 <b>❓ При обнаружении багов/ошибок/недоработок обращайтесь к администрации.</b>
 
-<b>Администрация — @kenzooov:</b>
+<b>Администрация — @kenzooov</b>
 <b>Ответ поступит в самое ближайшее время 😉:</b>"""
 
     bot.send_message(
@@ -1961,7 +1957,7 @@ def check_subscription_after_callback(call):
 
         # Показываем главное меню
         referral_reward = get_setting('referral_reward', REFERRAL_REWARD)
-        welcome_text = f"""<b>"⌨️Меню"</b>"""
+        welcome_text = f"""<b>⌨️Меню</b>"""
 
         bot.send_message(
             call.message.chat.id,
