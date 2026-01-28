@@ -1128,7 +1128,7 @@ def check_referrals_command(message):
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    cursor.execute("SELECT user_id, username, full_name, total_referrals FROM users WHERE username = ?", (target_username,))
+    cursor.execute("SELECT user_id, username, full_name FROM users WHERE username = ?", (target_username,))
     user = cursor.fetchone()
     
     if not user:
@@ -1142,7 +1142,7 @@ def check_referrals_command(message):
         )
         return
     
-    user_id, username, full_name, total_referrals = user
+    user_id, username, full_name = user
     safe_username = sanitize_text(username) if username else "Не указан"
     safe_full_name = sanitize_text(full_name) if full_name else f"User_{user_id}"
     
@@ -1150,7 +1150,7 @@ def check_referrals_command(message):
     cursor.execute("""
         SELECT user_id, username, full_name, balance, registration_date 
         FROM users 
-        WHERE referrer_id = ?
+        WHERE referred_by = ?
         ORDER BY registration_date DESC
     """, (user_id,))
     
