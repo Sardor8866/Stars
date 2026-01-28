@@ -379,6 +379,30 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS promo_codes (
+            code TEXT PRIMARY KEY,
+            amount REAL NOT NULL,
+            max_uses INTEGER NOT NULL,
+            current_uses INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by INTEGER,
+            is_active INTEGER DEFAULT 1
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS promo_code_uses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT,
+            user_id INTEGER,
+            used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (code) REFERENCES promo_codes (code),
+            FOREIGN KEY (user_id) REFERENCES users (user_id),
+            UNIQUE(code, user_id)
+        )
+    ''')
+
     default_settings = [
         ('min_withdrawal', MIN_WITHDRAWAL, 'Минимальная сумма вывода в USDT'),
         ('referral_reward', REFERRAL_REWARD, 'Награда за реферала в USDT'),
@@ -436,6 +460,120 @@ def update_setting(name, value):
     ''', (value, name))
     conn.commit()
     conn.close()
+
+# ========== ФУНКЦИИ ДЛЯ ПРОМОКОДОВ ==========
+def generate_promo_code():
+    """Генерация случайного промокода"""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+def create_promo_code(amount, max_uses, created_by):
+    """Создание промокода"""
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+    cursor = conn.cursor()
+    
+    code = generate_promo_code()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO promo_codes (code, amount, max_uses, created_by)
+            VALUES (?, ?, ?, ?)
+        ''', (code, amount, max_uses, created_by))
+        conn.commit()
+        conn.close()
+        return code
+    except sqlite3.IntegrityError:
+        # Если код уже существует, генерируем новый
+        conn.close()
+        return create_promo_code(amount, max_uses, created_by)
+
+def activate_promo_code(user_id, code):
+    """Активация промокода пользователем"""
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+    cursor = conn.cursor()
+    
+    try:
+        # Проверяем существование и активность промокода
+        cursor.execute('''
+            SELECT amount, max_uses, current_uses, is_active
+            FROM promo_codes
+            WHERE code = ?
+        ''', (code.upper(),))
+        
+        promo = cursor.fetchone()
+        
+        if not promo:
+            conn.close()
+            return False, "❌ Промокод не найден"
+        
+        amount, max_uses, current_uses, is_active = promo
+        
+        if not is_active:
+            conn.close()
+            return False, "❌ Промокод деактивирован"
+        
+        if current_uses >= max_uses:
+            conn.close()
+            return False, "❌ Промокод исчерпан"
+        
+        # Проверяем, не использовал ли пользователь уже этот промокод
+        cursor.execute('''
+            SELECT id FROM promo_code_uses
+            WHERE code = ? AND user_id = ?
+        ''', (code.upper(), user_id))
+        
+        if cursor.fetchone():
+            conn.close()
+            return False, "❌ Вы уже использовали этот промокод"
+        
+        # Начисляем бонус
+        cursor.execute('''
+            UPDATE users
+            SET balance = balance + ?
+            WHERE user_id = ?
+        ''', (amount, user_id))
+        
+        # Записываем использование
+        cursor.execute('''
+            INSERT INTO promo_code_uses (code, user_id)
+            VALUES (?, ?)
+        ''', (code.upper(), user_id))
+        
+        # Увеличиваем счетчик использований
+        cursor.execute('''
+            UPDATE promo_codes
+            SET current_uses = current_uses + 1
+            WHERE code = ?
+        ''', (code.upper(),))
+        
+        # Добавляем транзакцию
+        cursor.execute('''
+            INSERT INTO transactions (user_id, amount, type, description)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, amount, 'promo_code', f'Активирован промокод: {code.upper()}'))
+        
+        conn.commit()
+        conn.close()
+        return True, f"✅ Промокод активирован!\n\n💰 Сумма: {format_usdt(amount)}"
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return False, f"❌ Ошибка: {str(e)}"
+
+def get_promo_codes_list():
+    """Получить список всех промокодов"""
+    conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT code, amount, max_uses, current_uses, is_active, created_at
+        FROM promo_codes
+        ORDER BY created_at DESC
+    ''')
+    
+    codes = cursor.fetchall()
+    conn.close()
+    return codes
 
 # ========== ФУНКЦИИ ПОЛЬЗОВАТЕЛЯ ==========
 def register_user(user_id, username, full_name, referrer_id=None):
@@ -760,6 +898,31 @@ def create_withdrawal(user_id, username, amount):
     conn.commit()
     conn.close()
 
+    # Уведомляем админов
+    try:
+        for admin_id in ADMIN_IDS:
+            try:
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.add(
+                    types.InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{withdrawal_id}"),
+                    types.InlineKeyboardButton("❌ Отклонить", callback_data=f"admin_reject_{withdrawal_id}")
+                )
+                
+                bot.send_message(
+                    admin_id,
+                    f"""<b>💸 Новая заявка на вывод!</b>
+
+<b>👤 Пользователь:</b> @{safe_username}
+<b>💰 Сумма:</b> {format_usdt(amount)}
+<b>🆔 ID заявки:</b> {withdrawal_id}""",
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+            except:
+                pass
+    except:
+        pass
+
     return True, f"Заявка на вывод {format_usdt(amount)} создана"
 
 def get_user_withdrawals(user_id, limit=10):
@@ -854,13 +1017,14 @@ def get_bot_stats():
 
 # ========== КЛАВИАТУРЫ ==========
 def create_main_menu():
-    """Главное меню - 5 кнопок"""
+    """Главное меню - 6 кнопок"""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     buttons = [
         "👤Профиль",
         "👨‍💻Информация о проекте",
         "💸Заработать",
         "🎁Ежедневный бонус",
+        "🎁Активировать промокод",
         "🆘Тех. поддержка"
     ]
     keyboard.add(*buttons)
@@ -1133,7 +1297,7 @@ def handle_captcha_callback(call):
             bot.answer_callback_query(call.id, "❌ Неправильно, попробуйте еще раз")
 
 # ========== ОБРАБОТЧИКИ КНОПОК ГЛАВНОГО МЕНЮ ==========
-@bot.message_handler(func=lambda message: message.text in ["👤Профиль", "👨‍💻Информация о проекте", "💸Заработать", "🎁Ежедневный бонус", "🆘Тех. поддержка"])
+@bot.message_handler(func=lambda message: message.text in ["👤Профиль", "👨‍💻Информация о проекте", "💸Заработать", "🎁Ежедневный бонус", "🎁Активировать промокод", "🆘Тех. поддержка"])
 def handle_main_menu(message):
     user_id = message.from_user.id
     
@@ -1167,6 +1331,8 @@ def handle_main_menu(message):
         invite_command(message)
     elif message.text == "🎁Ежедневный бонус":
         daily_bonus_command(message)
+    elif message.text == "🎁Активировать промокод":
+        promo_code_command(message)
     elif message.text == "🆘Тех. поддержка":
         support_command(message)
 
@@ -1533,24 +1699,37 @@ def process_withdrawal_username(message, user_data):
 
     if success:
         user_info = get_user_info(user_id)
+        
+        # Получаем ID заявки из последней записи
+        conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
+        cursor = conn.cursor()
+        cursor.execute("SELECT withdrawal_id FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC LIMIT 1", (user_id,))
+        withdrawal_id = cursor.fetchone()[0]
+        conn.close()
 
         bot.send_message(
             message.chat.id,
-            f"""✅ <b>ЗАЯВКА СОЗДАНА</b>
+            f"""<b>💸 Заявка на вывод</b>
+
+Для вывода средств отправьте:
+1. Сумму
+2. Ссылку на ваш счет в @send (/invoices)
+
+Пример:
+1. 5
+2. t.me/send?start=IVq (Ссылка на счет)
 
 ✅ <b>Заявка на вывод создана!</b>
 
-<b>ДЕТАЛИ:</b>
-Сумма: <b>{format_usdt(amount)}</b>
-Username: <b>@{username}</b>
-Ваш баланс: <b>{format_usdt(user_info['balance'])}</b>
-Статус: <b>⏳ На рассмотрении</b>
+<b>💰 Сумма:</b> {format_usdt(amount)}
+<b>🔗 Счет:</b> https://t.me/send?start=IVqhDHooVJKU...
+<b>🆔 ID заявки:</b> {withdrawal_id}
 
-<b>ИНФОРМАЦИЯ:</b>
-Время: до 24 часов
-Связь: @{username}
+<b>⏳ Ожидайте подтверждения администратора</b>
 
-<b>🎯 Следите за статусом!</b>""",
+<b>📱 Telegram Crypto Bot</b>
+Use @CryptoBot to buy, sell, store, @send and pay
+with cryptocurrency right in Telegram.""",
             parse_mode='HTML',
             reply_markup=create_main_menu()
         )
@@ -1580,6 +1759,34 @@ def support_command(message):
     bot.send_message(
         message.chat.id,
         support_text,
+        parse_mode='HTML'
+    )
+
+def promo_code_command(message):
+    """🎁Активировать промокод"""
+    user_id = message.from_user.id
+    
+    promo_text = """<b>🎁 Активировать промокод</b>
+
+Введите промокод:"""
+    
+    msg = bot.send_message(
+        message.chat.id,
+        promo_text,
+        parse_mode='HTML'
+    )
+    bot.register_next_step_handler(msg, process_promo_code)
+
+def process_promo_code(message):
+    """Обработка введенного промокода"""
+    user_id = message.from_user.id
+    code = message.text.strip().upper()
+    
+    success, message_text = activate_promo_code(user_id, code)
+    
+    bot.send_message(
+        message.chat.id,
+        message_text,
         parse_mode='HTML'
     )
 
@@ -1730,13 +1937,25 @@ def admin_command(message):
         bot.send_message(message.chat.id, "❌ Нет доступа")
         return
 
-    admin_text = """<b>АДМИН ПАНЕЛЬ</b>
+    admin_text = """<b>⚙️ Админ панель</b>
 
-<b>Добро пожаловать в панель управления!</b>
+<b>👥 Пользователи:</b> 2
+<b>💰 Общий баланс:</b> 0.10 USDT
+
+<b>💵 Выведено:</b> 0.00 USDT
+<b>⏳ Ожидают вывод:</b> 0
+
+<b>📊 Статистика</b>
+<b>📧 Рассылка</b>
+<b>➕ Создать промокод</b>
+<b>💳 Заявки на вывод</b>
+<b>📺 Каналы</b>
 
 <b>Выберите действия:</b>
 /statistics - 📊 Статистика бота
 /mailing - 📢 Рассылка всем
+/createpromo - ➕ Создать промокод
+/promocodes - 📋 Список промокодов
 /addbalance - 💵 Добавить баланс
 /withdrawals - 💰 Управление выводами
 /channels - 📺 Управление каналами
@@ -1767,6 +1986,119 @@ def check_all_refs_command(message):
     bot.send_message(
         message.chat.id,
         "✅ Проверка всех реферальных бонусов завершена!",
+        parse_mode='HTML'
+    )
+
+@bot.message_handler(commands=['createpromo'])
+def create_promo_command(message):
+    """Создать промокод"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    
+    msg = bot.send_message(
+        message.chat.id,
+        "<b>➕ Создать промокод</b>\n\nВведите сумму для промокода (в USDT):",
+        parse_mode='HTML'
+    )
+    bot.register_next_step_handler(msg, process_promo_amount)
+
+def process_promo_amount(message):
+    """Обработка суммы промокода"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    
+    try:
+        amount = float(message.text)
+        if amount <= 0:
+            bot.send_message(
+                message.chat.id,
+                "❌ Сумма должна быть больше 0!",
+                parse_mode='HTML'
+            )
+            return
+        
+        msg = bot.send_message(
+            message.chat.id,
+            f"<b>Сумма:</b> {format_usdt(amount)}\n\nВведите максимальное количество использований (или 0 для безлимита):",
+            parse_mode='HTML'
+        )
+        bot.register_next_step_handler(msg, process_promo_uses, amount)
+        
+    except ValueError:
+        bot.send_message(
+            message.chat.id,
+            "❌ Неверный формат суммы!",
+            parse_mode='HTML'
+        )
+
+def process_promo_uses(message, amount):
+    """Обработка количества использований промокода"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    
+    try:
+        max_uses = int(message.text)
+        if max_uses < 0:
+            bot.send_message(
+                message.chat.id,
+                "❌ Количество использований не может быть отрицательным!",
+                parse_mode='HTML'
+            )
+            return
+        
+        if max_uses == 0:
+            max_uses = 999999  # Практически безлимит
+        
+        # Создаем промокод
+        code = create_promo_code(amount, max_uses, message.from_user.id)
+        
+        promo_text = f"""✅ <b>Промокод создан!</b>
+
+<b>🎟 Код:</b> <code>{code}</code>
+<b>💰 Сумма:</b> {format_usdt(amount)}
+<b>📊 Макс. использований:</b> {max_uses}"""
+        
+        bot.send_message(
+            message.chat.id,
+            promo_text,
+            parse_mode='HTML'
+        )
+        
+    except ValueError:
+        bot.send_message(
+            message.chat.id,
+            "❌ Неверный формат числа!",
+            parse_mode='HTML'
+        )
+
+@bot.message_handler(commands=['promocodes'])
+def promo_codes_list_command(message):
+    """Список всех промокодов"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    
+    codes = get_promo_codes_list()
+    
+    if not codes:
+        bot.send_message(
+            message.chat.id,
+            "📋 Промокодов пока нет",
+            parse_mode='HTML'
+        )
+        return
+    
+    promo_list = "<b>📋 Список промокодов:</b>\n\n"
+    
+    for code_data in codes:
+        code, amount, max_uses, current_uses, is_active, created_at = code_data
+        status = "✅" if is_active else "❌"
+        promo_list += f"{status} <code>{code}</code>\n"
+        promo_list += f"   💰 Сумма: {format_usdt(amount)}\n"
+        promo_list += f"   📊 Использовано: {current_uses}/{max_uses}\n\n"
+    
+    bot.send_message(
+        message.chat.id,
+        promo_list,
         parse_mode='HTML'
     )
 
