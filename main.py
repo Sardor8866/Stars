@@ -867,6 +867,14 @@ def create_withdrawal(user_id, invoice_link, amount):
     conn = sqlite3.connect('referral_bot.db', check_same_thread=False)
     cursor = conn.cursor()
 
+    # Проверяем наличие активной заявки
+    cursor.execute("SELECT withdrawal_id FROM withdrawals WHERE user_id = ? AND status = 'pending'", (user_id,))
+    active_withdrawal = cursor.fetchone()
+    
+    if active_withdrawal:
+        conn.close()
+        return False, f"❌ У вас уже есть активная заявка #{active_withdrawal[0]}. Дождитесь её обработки перед созданием новой."
+
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
     user_balance = cursor.fetchone()
 
