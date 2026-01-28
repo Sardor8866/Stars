@@ -904,8 +904,9 @@ def create_withdrawal(user_id, invoice_link, amount):
             try:
                 keyboard = types.InlineKeyboardMarkup()
                 
-                # Кнопка со ссылкой на счет
-                keyboard.add(types.InlineKeyboardButton("💳 Открыть счет для оплаты", url=invoice))
+                # Кнопка со ссылкой на счет - добавляем https:// если нужно
+                invoice_url = invoice_link if invoice_link.startswith('http') else f"https://{invoice_link}"
+                keyboard.add(types.InlineKeyboardButton("💳 Открыть счет для оплаты", url=invoice_url))
                 
                 keyboard.add(
                     types.InlineKeyboardButton("✅ Одобрить", callback_data=f"admin_approve_{withdrawal_id}"),
@@ -935,9 +936,10 @@ def create_withdrawal(user_id, invoice_link, amount):
                     parse_mode='HTML',
                     reply_markup=keyboard
                 )
-            except:
-                pass
-    except:
+            except Exception as e:
+                print(f"Ошибка отправки админу {admin_id}: {e}")
+    except Exception as e:
+        print(f"Ошибка уведомления админов: {e}")
         pass
 
     return True, f"Заявка на вывод {format_usdt(amount)} создана"
@@ -2325,15 +2327,27 @@ def manage_withdrawals_command(message):
     keyboard = types.InlineKeyboardMarkup(row_width=2)
 
     for w in withdrawals:
-        withdrawal_id, user_id, username, amount, status, admin_message, created_at, processed_at, full_name, user_balance = w
+        withdrawal_id, user_id, invoice_link, amount, status, admin_message, created_at, processed_at, full_name, user_balance = w
 
         safe_name = sanitize_text(full_name) if full_name else f"User_{user_id}"
-        safe_username = sanitize_text(username) if username else "Не указан"
+        safe_invoice = sanitize_text(invoice_link) if invoice_link else "Не указан"
+        
+        # Форматируем ссылку для кнопки
+        invoice_url = invoice_link if invoice_link.startswith('http') else f"https://{invoice_link}"
+        
         withdrawals_text += f'<b>#{withdrawal_id}</b> - {format_usdt(amount)}\n'
         withdrawals_text += f'👤 {safe_name} (ID: {user_id})\n'
-        withdrawals_text += f'📱 Username: @{safe_username}\n'
+        withdrawals_text += f'🔗 Счет: <code>{safe_invoice}</code>\n'
         withdrawals_text += f'💰 Баланс: {format_usdt(user_balance)}\n\n'
 
+        # Добавляем кнопку открытия счета
+        keyboard.add(
+            types.InlineKeyboardButton(
+                f"💳 Счет #{withdrawal_id}",
+                url=invoice_url
+            )
+        )
+        
         keyboard.add(
             types.InlineKeyboardButton(
                 f"✅ #{withdrawal_id} - {format_usdt_short(amount)}",
