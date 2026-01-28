@@ -1609,8 +1609,8 @@ def handle_withdrawal_callback(call):
 
     user_data = {'amount': amount, 'user_id': user_id}
 
-    # Первое сообщение - инструкция
-    bot.send_message(
+    # Запрос ссылки на счет
+    msg = bot.send_message(
         call.message.chat.id,
         f"""<b>💸 Заявка на вывод</b>
 
@@ -1621,15 +1621,6 @@ def handle_withdrawal_callback(call):
 Пример:
 1. {amount}
 2. t.me/send?start=IVq (Ссылка на счет)""",
-        parse_mode='HTML'
-    )
-    
-    # Второе сообщение - запрос ссылки
-    msg = bot.send_message(
-        call.message.chat.id,
-        f"""<b>Введите ссылку на ваш счет в @send:</b>
-
-Пример: t.me/send?start=IVqhDHooVJKU или https://t.me/send?start=IVqhDHooVJKU""",
         parse_mode='HTML'
     )
     bot.register_next_step_handler(msg, process_withdrawal_invoice, user_data)
@@ -1673,8 +1664,8 @@ def process_custom_withdrawal(message):
 
         user_data = {'amount': amount, 'user_id': message.from_user.id}
 
-        # Первое сообщение - инструкция
-        bot.send_message(
+        # Запрос ссылки на счет
+        msg = bot.send_message(
             message.chat.id,
             f"""<b>💸 Заявка на вывод</b>
 
@@ -1685,15 +1676,6 @@ def process_custom_withdrawal(message):
 Пример:
 1. {amount}
 2. t.me/send?start=IVq (Ссылка на счет)""",
-            parse_mode='HTML'
-        )
-        
-        # Второе сообщение - запрос ссылки
-        msg = bot.send_message(
-            message.chat.id,
-            f"""<b>Введите ссылку на ваш счет в @send:</b>
-
-Пример: t.me/send?start=IVqhDHooVJKU или https://t.me/send?start=IVqhDHooVJKU""",
             parse_mode='HTML'
         )
         bot.register_next_step_handler(msg, process_withdrawal_invoice, user_data)
@@ -1737,30 +1719,16 @@ def process_withdrawal_invoice(message, user_data):
         withdrawal_id = cursor.fetchone()[0]
         conn.close()
 
-        # Сообщение 1: Подтверждение создания заявки
+        # Сообщение пользователю: заявка создана
         bot.send_message(
             message.chat.id,
             f"""✅ <b>Заявка на вывод создана!</b>
 
 <b>💰 Сумма:</b> {format_usdt(amount)}
 <b>🔗 Счет:</b> {invoice_link}
-<b>🆔 ID заявки:</b> {withdrawal_id}""",
-            parse_mode='HTML'
-        )
-        
-        # Сообщение 2: Ожидание подтверждения
-        bot.send_message(
-            message.chat.id,
-            "<b>⏳ Ожидайте подтверждения администратора</b>",
-            parse_mode='HTML'
-        )
-        
-        # Сообщение 3: Реклама CryptoBot
-        bot.send_message(
-            message.chat.id,
-            """<b>📱 Telegram Crypto Bot</b>
-Use @CryptoBot to buy, sell, store, @send and pay
-with cryptocurrency right in Telegram.""",
+<b>🆔 ID заявки:</b> {withdrawal_id}
+
+<b>⏳ Ожидайте подтверждения администратора</b>""",
             parse_mode='HTML',
             reply_markup=create_main_menu()
         )
