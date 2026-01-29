@@ -2969,7 +2969,7 @@ def process_approve_withdrawal(message, withdrawal_id):
                 f"""✅ <b>ЗАЯВКА ОДОБРЕНА</b>
 
 ✅ <b>Заявка #{withdrawal_id} одобрена!</b>
-📱 <b>Username пользователя:@{safe_username}</b>
+📱 <b>Username пользователя: @{safe_username}</b>
 💰 <b>Сумма:</b> {format_usdt(amount)}""",
                 parse_mode='HTML'
             )
@@ -3066,7 +3066,7 @@ def process_reject_withdrawal(message, withdrawal_id):
                 f"""❌ <b>ЗАЯВКА ОТКЛОНЕНА</b>
 
 ❌ <b>Заявка #{withdrawal_id} отклонена!</b>
-📱 <b>Username пользователя:@{safe_username}</b>
+📱 <b>Username пользователя: @{safe_username}</b>
 💰 <b>Сумма:</b> {format_usdt(amount)}
 
 ⚠️ {CURRENCY} не возвращены пользователю.""",
