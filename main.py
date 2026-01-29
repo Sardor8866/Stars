@@ -1850,7 +1850,7 @@ t.me/send?start=IVqhDHooVJKU</code>
             parse_mode='HTML',
             reply_markup=create_main_menu()
         )
-       else:
+    else:
         # Просто показываем текст ошибки без дополнительного оформления
         bot.send_message(
             message.chat.id,
