@@ -889,16 +889,10 @@ def create_withdrawal(user_id, invoice_link, amount):
         return False, f"Мин. сумма: {format_usdt(min_withdrawal)}"
 
     safe_invoice = sanitize_text(invoice_link)
-    
-    # Получаем username пользователя из базы
-    cursor.execute("SELECT username FROM users WHERE user_id = ?", (user_id,))
-    user_data = cursor.fetchone()
-    user_username = user_data[0] if user_data and user_data[0] else None
-    
     cursor.execute('''
-        INSERT INTO withdrawals (user_id, username, amount, crypto_account, status)
-        VALUES (?, ?, ?, ?, 'pending')
-    ''', (user_id, user_username, amount, safe_invoice))
+        INSERT INTO withdrawals (user_id, username, amount, status)
+        VALUES (?, ?, ?, 'pending')
+    ''', (user_id, safe_invoice, amount))
 
     withdrawal_id = cursor.lastrowid
 
@@ -2942,7 +2936,12 @@ def process_approve_withdrawal(message, withdrawal_id):
         withdrawal = cursor.fetchone()
 
         if withdrawal:
-            user_id, amount, username = withdrawal
+            user_id, amount, crypto_address = withdrawal
+            
+            # Получаем настоящий username из таблицы users
+            cursor.execute("SELECT username FROM users WHERE user_id = ?", (user_id,))
+            user_data = cursor.fetchone()
+            real_username = user_data[0] if user_data and user_data[0] else str(user_id)
 
             cursor.execute('''
                 UPDATE withdrawals
@@ -2969,7 +2968,7 @@ def process_approve_withdrawal(message, withdrawal_id):
 
             conn.commit()
 
-            safe_username = sanitize_text(username) if username else "Не указан"
+            safe_username = sanitize_text(real_username) if real_username else "Не указан"
             bot.send_message(
                 message.chat.id,
                 f"""✅ <b>ЗАЯВКА ОДОБРЕНА</b>
@@ -3030,7 +3029,12 @@ def process_reject_withdrawal(message, withdrawal_id):
         withdrawal = cursor.fetchone()
 
         if withdrawal:
-            user_id, amount, username = withdrawal
+            user_id, amount, crypto_address = withdrawal
+            
+            # Получаем настоящий username из таблицы users
+            cursor.execute("SELECT username FROM users WHERE user_id = ?", (user_id,))
+            user_data = cursor.fetchone()
+            real_username = user_data[0] if user_data and user_data[0] else str(user_id)
 
             cursor.execute('''
                 UPDATE withdrawals
@@ -3066,7 +3070,7 @@ def process_reject_withdrawal(message, withdrawal_id):
 
             conn.commit()
 
-            safe_username = sanitize_text(username) if username else "Не указан"
+            safe_username = sanitize_text(real_username) if real_username else "Не указан"
             bot.send_message(
                 message.chat.id,
                 f"""❌ <b>ЗАЯВКА ОТКЛОНЕНА</b>
