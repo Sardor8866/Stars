@@ -1850,6 +1850,14 @@ t.me/send?start=IVqhDHooVJKU</code>
             parse_mode='HTML',
             reply_markup=create_main_menu()
         )
+       else:
+        # Просто показываем текст ошибки без дополнительного оформления
+        bot.send_message(
+            message.chat.id,
+            f"‼️ {message_text}",
+            parse_mode='HTML',
+            reply_markup=create_main_menu()
+        )
 
 def support_command(message):
     """🆘Техническая поддержка"""
