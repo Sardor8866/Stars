@@ -1850,18 +1850,6 @@ t.me/send?start=IVqhDHooVJKU</code>
             parse_mode='HTML',
             reply_markup=create_main_menu()
         )
-    else:
-        bot.send_message(
-            message.chat.id,
-            f"""❌ <b>ОШИБКА СОЗДАНИЯ</b>
-
-❌ <b>Ошибка!</b>
-
-{message_text}""",
-            parse_mode='HTML',
-            reply_markup=create_main_menu()
-        )
-
 
 def support_command(message):
     """🆘Техническая поддержка"""
@@ -2981,7 +2969,7 @@ def process_approve_withdrawal(message, withdrawal_id):
                 f"""✅ <b>ЗАЯВКА ОДОБРЕНА</b>
 
 ✅ <b>Заявка #{withdrawal_id} одобрена!</b>
-📱 <b>Username пользователя:</b> @{safe_username}
+📱 <b>Username пользователя:@{safe_username}</b>
 💰 <b>Сумма:</b> {format_usdt(amount)}""",
                 parse_mode='HTML'
             )
@@ -3078,7 +3066,7 @@ def process_reject_withdrawal(message, withdrawal_id):
                 f"""❌ <b>ЗАЯВКА ОТКЛОНЕНА</b>
 
 ❌ <b>Заявка #{withdrawal_id} отклонена!</b>
-📱 <b>Username пользователя:</b> @{safe_username}
+📱 <b>Username пользователя:@{safe_username}</b>
 💰 <b>Сумма:</b> {format_usdt(amount)}
 
 ⚠️ {CURRENCY} не возвращены пользователю.""",
