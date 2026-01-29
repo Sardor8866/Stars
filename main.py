@@ -872,7 +872,7 @@ def create_withdrawal(user_id, invoice_link, amount):
     
     if active_withdrawal:
         conn.close()
-        return False, f"❌ У вас уже есть активная заявка #{active_withdrawal[0]}. Дождитесь её обработки перед созданием новой."
+        return False, f" У вас уже есть активная заявка дождитесь её обработки перед созданием новой."
 
 
     cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
@@ -2960,13 +2960,10 @@ def process_approve_withdrawal(message, withdrawal_id):
             try:
                 bot.send_message(
                     user_id,
-                    f"""✅ <b>ЗАЯВКА ОДОБРЕНА</b>
-
-✅ <b>Ваша заявка на вывод одобрена!</b>
+                    f"""✅ <b>Ваша заявка на вывод одобрена!</b>
 
 <b>📋 ДЕТАЛИ:</b>
 Сумма: {format_usdt(amount)}
-Номер: #{withdrawal_id}
 Дата: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 {f'<b>💬 СООБЩЕНИЕ:</b>\n{admin_message}' if admin_message else ''}""",
                     parse_mode='HTML'
@@ -3058,16 +3055,11 @@ def process_reject_withdrawal(message, withdrawal_id):
             try:
                 bot.send_message(
                     user_id,
-                    f"""❌ <b>ЗАЯВКА ОТКЛОНЕНА</b>
-
-❌ <b>Ваша заявка на вывод отклонена</b>
+                    f"""❌ <b>Ваша заявка на вывод отклонена</b>
 
 <b>📋 ДЕТАЛИ:</b>
 Сумма: {format_usdt(amount)}
-Номер: #{withdrawal_id}
 Дата: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-
-⚠️ <b>{CURRENCY} НЕ возвращаются на баланс</b>
 
 <b>💬 ПРИЧИНА:</b>
 {reject_reason}""",
