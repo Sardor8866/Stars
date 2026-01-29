@@ -1724,6 +1724,23 @@ t.me/send?start=IVqhDHooVJKU</code>
     bot.register_next_step_handler(msg, process_withdrawal_request)
     bot.answer_callback_query(call.id)
 
+
+def validate_invoice_link(invoice_link):
+    """Проверка ссылки на счёт @send"""
+    invoice_link = invoice_link.strip()
+    
+    # Проверяем формат t.me/send?start=
+    valid_patterns = [
+        r't\.me/send\?start=[A-Za-z0-9_-]+',
+        r'https?://t\.me/send\?start=[A-Za-z0-9_-]+'
+    ]
+    
+    for pattern in valid_patterns:
+        if re.search(pattern, invoice_link):
+            return True
+    
+    return False
+
 def process_withdrawal_request(message):
     """Обработка заявки на вывод в формате: сумма + ссылка"""
     user_id = message.from_user.id
@@ -1760,6 +1777,15 @@ t.me/send?start=IVqhDHooVJKU</code>
             """❌ <b>ОШИБКА ВВОДА</b>
 
 Первая строка должна быть числом (сумма)!""",
+            parse_mode='HTML'
+        )
+        return
+
+    # Проверка ссылки на счёт
+    if not validate_invoice_link(invoice_link):
+        bot.send_message(
+            message.chat.id,
+            "❌ <b>ОШИБКА</b>\n\nОтправьте ссылку на счёт из @send!",
             parse_mode='HTML'
         )
         return
