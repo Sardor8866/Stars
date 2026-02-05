@@ -6,9 +6,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     ReplyKeyboardMarkup,
-    KeyboardButton,
-    MessageEntity,
-    Update
+    KeyboardButton
 )
 from aiohttp import web
 import json
@@ -17,24 +15,14 @@ import json
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 if not BOT_TOKEN:
-    BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-if not BOT_TOKEN:
-    BOT_TOKEN = os.getenv("TOKEN")
-if not BOT_TOKEN:
     print("ОШИБКА: Не найден токен бота!")
-    print("Создайте переменную окружения BOT_TOKEN в настройках Render")
     exit(1)
 
-PORT = int(os.getenv("PORT", 10000))  # Render использует 10000
+PORT = int(os.getenv("PORT", 10000))
 DOMAIN = os.getenv("DOMAIN", "stars-prok.onrender.com")
 
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://{DOMAIN}{WEBHOOK_PATH}"
-
-# Premium emoji IDs
-EMOJI_1 = "5447508713181034519"
-EMOJI_2 = "5422858869372104873"
-EMOJI_3 = "5458774648621643551"
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
@@ -58,12 +46,17 @@ async def send_welcome(message: Message):
 # -------------------- Баланс --------------------
 @dp.message(F.text == "Баланс")
 async def show_balance(message: Message):
-    text = "[] 0,00   [] 0,00   [] 0,00"
-    entities = [
-        MessageEntity(type="custom_emoji", offset=0, length=2, custom_emoji_id=EMOJI_1),
-        MessageEntity(type="custom_emoji", offset=9, length=2, custom_emoji_id=EMOJI_2),
-        MessageEntity(type="custom_emoji", offset=18, length=2, custom_emoji_id=EMOJI_3)
-    ]
+    # Ключевой момент: отправляем кастомные эмоджи через parse_mode="HTML" с тегом <tg-emoji>
+    balance_text = f"""
+<b>💰 Баланс</b>
+
+<blockquote>
+<tg-emoji emoji-id="5447508713181034519">💲</tg-emoji> 0,00   
+<tg-emoji emoji-id="5422858869372104873">💎</tg-emoji> 0,00   
+<tg-emoji emoji-id="5458774648621643551">❄️</tg-emoji> 0,00
+</blockquote>
+    """
+    
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -72,11 +65,11 @@ async def show_balance(message: Message):
             ]
         ]
     )
-    await bot.send_message(
-        chat_id=message.chat.id,
-        text=text,
-        entities=entities,
-        reply_markup=markup
+    
+    await message.answer(
+        balance_text,
+        reply_markup=markup,
+        parse_mode="HTML"  # ОБЯЗАТЕЛЬНО HTML парсинг
     )
 
 # -------------------- Партнеры --------------------
@@ -107,29 +100,23 @@ async def withdraw(call):
 # -------------------- Webhook обработчик --------------------
 async def handle(request: web.Request):
     try:
-        # Получаем данные от Telegram
         data = await request.json()
+        from aiogram.types import Update
         update = Update(**data)
-        
-        # Обрабатываем обновление
-        await dp.feed_update(bot, update)  # <-- Исправлено: передаем bot первым аргументом
-        
+        await dp.feed_update(bot, update)
         return web.Response(text="OK")
     except Exception as e:
         print(f"Ошибка обработки webhook: {e}")
         return web.Response(text="Error", status=500)
 
 async def on_startup(app):
-    # Удаляем старый webhook и устанавливаем новый
     await bot.delete_webhook()
     await bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    print(f"✅ Бот запущен с токеном: {BOT_TOKEN[:10]}...")
 
 async def on_shutdown(app):
     await bot.delete_webhook()
     await bot.session.close()
-    print("Бот остановлен")
 
 # -------------------- Запуск aiohttp --------------------
 app = web.Application()
