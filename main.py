@@ -11,9 +11,9 @@ from aiogram.types import (
 )
 from aiohttp import web
 
-TOKEN = os.getenv("TOKEN")  # На Render удобно хранить в переменных окружения
+TOKEN = os.getenv("8367850036:AAFlwAwCeCMG1fC8e1kT1pUuFCZtC1Zis4A")  # На Render удобно хранить в переменных окружения
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"https://YOUR_DOMAIN.com{WEBHOOK_PATH}"  # Замени на твой домен
+WEBHOOK_URL = f"https://stars-prok.onrender.com{WEBHOOK_PATH}"  # Замени на твой домен
 
 # Premium emoji IDs
 EMOJI_1 = "5447508713181034519"
