@@ -46,16 +46,37 @@ async def send_welcome(message: Message):
 # -------------------- Баланс --------------------
 @dp.message(F.text == "Баланс")
 async def show_balance(message: Message):
-    # Ключевой момент: отправляем кастомные эмоджи через parse_mode="HTML" с тегом <tg-emoji>
-    balance_text = f"""
-<b>💰 Баланс</b>
-
-<blockquote>
-<tg-emoji emoji-id="5447508713181034519">💲</tg-emoji> 0,00   
-<tg-emoji emoji-id="5422858869372104873">💎</tg-emoji> 0,00   
-<tg-emoji emoji-id="5458774648621643551">❄️</tg-emoji> 0,00
-</blockquote>
-    """
+    # Способ 1: Прямая вставка кастомных эмоджи через Unicode escape
+    # Конвертируем emoji_id в Unicode символ
+    emoji1 = chr(0x1F4B2)  # 💲 (замените на нужный если требуется)
+    emoji2 = chr(0x1F48E)  # 💎
+    emoji3 = chr(0x2744)   # ❄️
+    
+    # Способ 2: Использовать bot.send_message с entities напрямую
+    from aiogram.types import MessageEntity
+    
+    balance_text = "💰 Баланс\n\n💲 0,00\n💎 0,00\n❄️ 0,00"
+    
+    entities = [
+        MessageEntity(
+            type="custom_emoji",
+            offset=11,
+            length=1,
+            custom_emoji_id="5447508713181034519"
+        ),
+        MessageEntity(
+            type="custom_emoji",
+            offset=19,
+            length=1,
+            custom_emoji_id="5422858869372104873"
+        ),
+        MessageEntity(
+            type="custom_emoji",
+            offset=27,
+            length=1,
+            custom_emoji_id="5458774648621643551"
+        )
+    ]
     
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -66,10 +87,12 @@ async def show_balance(message: Message):
         ]
     )
     
-    await message.answer(
-        balance_text,
-        reply_markup=markup,
-        parse_mode="HTML"  # ОБЯЗАТЕЛЬНО HTML парсинг
+    # ВАЖНО: Используем bot.send_message напрямую, а не message.answer
+    await bot.send_message(
+        chat_id=message.chat.id,
+        text=balance_text,
+        entities=entities,
+        reply_markup=markup
     )
 
 # -------------------- Партнеры --------------------
@@ -84,7 +107,7 @@ async def partners(message: Message):
 @dp.message(F.text == "🎮 Играть")
 async def games(message: Message):
     await message.answer(
-        "<b>🎮 Играть</b>\n\n<blockquote>В разработке</blockquote>",
+        "<b>🎮 Игры</b>\n\n<blockquote>В разработке</blockquote>",
         parse_mode="HTML"
     )
 
