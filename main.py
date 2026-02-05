@@ -7,30 +7,26 @@ from aiogram.types import (
     InlineKeyboardButton,
     ReplyKeyboardMarkup,
     KeyboardButton,
-    MessageEntity
+    MessageEntity,
+    Update
 )
 from aiohttp import web
+import json
 
 # -------------------- Конфиг --------------------
-# Имя переменной окружения должно быть строкой, а не токеном
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # В Render создайте переменную "BOT_TOKEN"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Если токен не найден, проверяем альтернативные имена
 if not BOT_TOKEN:
-    BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")  # Проверяем другие возможные имена
+    BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not BOT_TOKEN:
     BOT_TOKEN = os.getenv("TOKEN")
-
-# Если токен все еще не найден, выводим ошибку
 if not BOT_TOKEN:
     print("ОШИБКА: Не найден токен бота!")
     print("Создайте переменную окружения BOT_TOKEN в настройках Render")
-    # Для локального тестирования можно временно указать токен прямо в коде:
-    # BOT_TOKEN = "8367850036:AAFlwAwCeCMG1fC8e1kT1pUuFCZtC1Zis4A"
     exit(1)
 
-PORT = int(os.getenv("PORT", 8000))  # Render сам задает порт
-DOMAIN = os.getenv("DOMAIN", "stars-prok.onrender.com")  # твой публичный домен Render
+PORT = int(os.getenv("PORT", 10000))  # Render использует 10000
+DOMAIN = os.getenv("DOMAIN", "stars-prok.onrender.com")
 
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = f"https://{DOMAIN}{WEBHOOK_PATH}"
@@ -40,7 +36,7 @@ EMOJI_1 = "5447508713181034519"
 EMOJI_2 = "5422858869372104873"
 EMOJI_3 = "5458774648621643551"
 
-bot = Bot(BOT_TOKEN)  # Используем правильную переменную
+bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
 # -------------------- Главное меню --------------------
@@ -108,21 +104,32 @@ async def deposit(call):
 async def withdraw(call):
     await call.answer("Вывод в разработке")
 
-# -------------------- Webhook --------------------
+# -------------------- Webhook обработчик --------------------
 async def handle(request: web.Request):
-    update = await request.json()
-    await dp.feed_update(update)
-    return web.Response(text="ok")
+    try:
+        # Получаем данные от Telegram
+        data = await request.json()
+        update = Update(**data)
+        
+        # Обрабатываем обновление
+        await dp.feed_update(bot, update)  # <-- Исправлено: передаем bot первым аргументом
+        
+        return web.Response(text="OK")
+    except Exception as e:
+        print(f"Ошибка обработки webhook: {e}")
+        return web.Response(text="Error", status=500)
 
 async def on_startup(app):
+    # Удаляем старый webhook и устанавливаем новый
     await bot.delete_webhook()
     await bot.set_webhook(WEBHOOK_URL)
-    print("Webhook установлен:", WEBHOOK_URL)
-    print(f"Бот запущен с токеном: {BOT_TOKEN[:10]}...")
+    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
+    print(f"✅ Бот запущен с токеном: {BOT_TOKEN[:10]}...")
 
 async def on_shutdown(app):
     await bot.delete_webhook()
     await bot.session.close()
+    print("Бот остановлен")
 
 # -------------------- Запуск aiohttp --------------------
 app = web.Application()
@@ -131,5 +138,5 @@ app.on_startup.append(on_startup)
 app.on_cleanup.append(on_shutdown)
 
 if __name__ == "__main__":
-    print(f"Запуск бота на порту {PORT}...")
+    print(f"🚀 Запуск бота на порту {PORT}...")
     web.run_app(app, host="0.0.0.0", port=PORT)
