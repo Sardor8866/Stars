@@ -1,5 +1,5 @@
-import asyncio
 import os
+import asyncio
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message,
@@ -11,9 +11,13 @@ from aiogram.types import (
 )
 from aiohttp import web
 
-TOKEN = os.getenv("8367850036:AAFlwAwCeCMG1fC8e1kT1pUuFCZtC1Zis4A")  # На Render удобно хранить в переменных окружения
+# -------------------- Конфиг --------------------
+TOKEN = os.getenv("8367850036:AAFlwAwCeCMG1fC8e1kT1pUuFCZtC1Zis4A")  # Токен бота на Render
+PORT = int(os.getenv("PORT", 8000))  # Render сам задает порт
+DOMAIN = os.getenv("DOMAIN", "https://stars-prok.onrender.com")  # твой публичный домен Render
+
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"https://stars-prok.onrender.com{WEBHOOK_PATH}"  # Замени на твой домен
+WEBHOOK_URL = f"https://{DOMAIN}{WEBHOOK_PATH}"
 
 # Premium emoji IDs
 EMOJI_1 = "5447508713181034519"
@@ -23,7 +27,7 @@ EMOJI_3 = "5458774648621643551"
 bot = Bot(TOKEN)
 dp = Dispatcher()
 
-# ================== ГЛАВНОЕ МЕНЮ ==================
+# -------------------- Главное меню --------------------
 @dp.message(F.text.in_({"/start", "/menu"}))
 async def send_welcome(message: Message):
     keyboard = ReplyKeyboardMarkup(
@@ -39,7 +43,7 @@ async def send_welcome(message: Message):
         parse_mode="HTML"
     )
 
-# ================== БАЛАНС (PREMIUM) ==================
+# -------------------- Баланс --------------------
 @dp.message(F.text == "Баланс")
 async def show_balance(message: Message):
     text = "[] 0,00   [] 0,00   [] 0,00"
@@ -63,7 +67,7 @@ async def show_balance(message: Message):
         reply_markup=markup
     )
 
-# ================== ПАРТНЕРЫ ==================
+# -------------------- Партнеры --------------------
 @dp.message(F.text == "🤝 Партнеры")
 async def partners(message: Message):
     await message.answer(
@@ -71,7 +75,7 @@ async def partners(message: Message):
         parse_mode="HTML"
     )
 
-# ================== ИГРЫ ==================
+# -------------------- Игры --------------------
 @dp.message(F.text == "🎮 Играть")
 async def games(message: Message):
     await message.answer(
@@ -79,7 +83,7 @@ async def games(message: Message):
         parse_mode="HTML"
     )
 
-# ================== CALLBACK ==================
+# -------------------- Callback --------------------
 @dp.callback_query(F.data == "deposit")
 async def deposit(call):
     await call.answer("Пополнение в разработке")
@@ -88,29 +92,26 @@ async def deposit(call):
 async def withdraw(call):
     await call.answer("Вывод в разработке")
 
-# ================== WEBHOOK ==================
+# -------------------- Webhook --------------------
 async def handle(request: web.Request):
-    """Обработчик входящих обновлений от Telegram"""
     update = await request.json()
     await dp.feed_update(update)
     return web.Response(text="ok")
 
 async def on_startup(app):
-    """Установка webhook при старте"""
     await bot.delete_webhook()
     await bot.set_webhook(WEBHOOK_URL)
     print("Webhook установлен:", WEBHOOK_URL)
 
 async def on_shutdown(app):
-    """Удаление webhook при остановке"""
     await bot.delete_webhook()
     await bot.session.close()
 
-# ================== ЗАПУСК AIOHTTP ==================
+# -------------------- Запуск aiohttp --------------------
 app = web.Application()
 app.router.add_post(WEBHOOK_PATH, handle)
 app.on_startup.append(on_startup)
 app.on_cleanup.append(on_shutdown)
 
 if __name__ == "__main__":
-    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    web.run_app(app, host="0.0.0.0", port=PORT)
