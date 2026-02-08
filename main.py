@@ -329,6 +329,17 @@ def cryptobot_webhook():
         print(f"❌ Ошибка обработки вебхука: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/webhook/telegram', methods=['POST'])
+def telegram_webhook():
+    """Обработчик вебхука от Telegram"""
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    else:
+        return 'Invalid content type', 400
+
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({"status": "healthy", "timestamp": time.time()}), 200
@@ -336,7 +347,6 @@ def health_check():
 # Загружаем сохраненные маппинги при запуске
 load_user_mappings()
 
-# ВСЕ ОСТАЛЬНЫЕ ФУНКЦИИ ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ КАК У ВАС БЫЛИ
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     save_user_info(
@@ -706,8 +716,8 @@ def callback_handler(call):
 def setup_cryptobot_webhook():
     """Настраивает вебхук в CryptoBot"""
     try:
-        # Получаем URL вебхука (нужно будет указать ваш домен/ip)
-        webhook_url = "https://stars-prok.onrender.com"
+        # Получаем URL вебхука
+        webhook_url = "https://stars-prok.onrender.com/webhook/cryptobot"
         
         headers = {'Crypto-Pay-API-Token': CRYPTOBOT_TOKEN}
         
@@ -726,7 +736,7 @@ def setup_cryptobot_webhook():
         if response.status_code == 200:
             result = response.json()
             if result.get('ok'):
-                print(f"✅ Вебхук установлен в CryptoBot: {webhook_url}")
+                print(f"✅ Вебхук CryptoBot установлен: {webhook_url}")
                 return True
             else:
                 print(f"⚠️ Ошибка CryptoBot API: {result.get('error')}")
@@ -736,16 +746,36 @@ def setup_cryptobot_webhook():
         return False
         
     except Exception as e:
-        print(f"❌ Ошибка установки вебхука: {e}")
+        print(f"❌ Ошибка установки вебхука CryptoBot: {e}")
+        return False
+
+def setup_telegram_webhook():
+    """Настраивает вебхук в Telegram"""
+    try:
+        # Получаем URL вебхука
+        webhook_url = "https://stars-prok.onrender.com/webhook/telegram"
+        
+        # Удаляем старый вебхук
+        bot.remove_webhook()
+        time.sleep(1)
+        
+        # Устанавливаем новый
+        bot.set_webhook(url=webhook_url)
+        
+        print(f"✅ Вебхук Telegram установлен: {webhook_url}")
+        print(f"✅ Токен бота: {bot.token[:10]}...")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка установки вебхука Telegram: {e}")
         return False
 
 def run_flask():
     """Запускает Flask сервер"""
     port = int(os.environ.get('PORT', 10000))
     print(f"🚀 Запуск Flask сервера на порту {port}")
+    print(f"🌐 Ссылка: https://stars-prok.onrender.com")
     serve(app, host='0.0.0.0', port=port)
-
-# ... весь ваш код остается без изменений до самого конца ...
 
 if __name__ == "__main__":
     print("=" * 50)
@@ -753,13 +783,23 @@ if __name__ == "__main__":
     print("=" * 50)
     print(f"👑 Админ ID: {ADMIN_CHAT_ID}")
     print(f"💰 Минимальная ставка: {MIN_BET} USDT")
-    print("💳 Настройка вебхуков CryptoBot...")
     
-    # Настраиваем вебхук
-    if setup_cryptobot_webhook():
-        print("✅ Вебхук успешно настроен")
+    # Загружаем данные пользователей
+    load_user_mappings()
+    
+    # Настраиваем вебхук Telegram
+    print("📱 Настройка вебхука Telegram...")
+    if setup_telegram_webhook():
+        print("✅ Вебхук Telegram успешно настроен")
     else:
-        print("⚠️ Не удалось настроить вебхук. Платежи не будут приходить!")
+        print("⚠️ Не удалось настроить вебхук Telegram")
+    
+    # Настраиваем вебхук CryptoBot
+    print("💳 Настройка вебхука CryptoBot...")
+    if setup_cryptobot_webhook():
+        print("✅ Вебхук CryptoBot успешно настроен")
+    else:
+        print("⚠️ Не удалось настроить вебхук CryptoBot. Платежи не будут приходить!")
     
     print("\n" + "=" * 50)
     print("💡 ИНСТРУКЦИЯ ДЛЯ СТАВОК ЧЕРЕЗ ВЕБХУКИ:")
@@ -774,4 +814,3 @@ if __name__ == "__main__":
     
     # Запускаем Flask сервер
     run_flask()
-    # bot.polling() УДАЛЕНО - не нужно при использовании Flask
