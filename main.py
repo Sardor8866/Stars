@@ -45,6 +45,16 @@ processed_payments = set()
 # Flask приложение
 app = Flask(__name__)
 
+def ensure_file_exists(filename, default_content=[]):
+    """Создает файл если он не существует"""
+    if not os.path.exists(filename):
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(default_content, f, indent=4, ensure_ascii=False)
+            print(f"✅ Создан файл {filename}")
+        except Exception as e:
+            print(f"❌ Ошибка создания файла {filename}: {e}")
+
 def log_error(error_type, message, exc=None):
     """Логирует ошибки в файл"""
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -135,6 +145,7 @@ def process_pending_payments():
     try:
         if not os.path.exists('pending_payments.json'):
             print("ℹ️ Файл pending_payments.json не найден")
+            ensure_file_exists('pending_payments.json', [])
             return 0
         
         with open('pending_payments.json', 'r', encoding='utf-8') as f:
@@ -290,15 +301,33 @@ def manual_check():
 @app.route('/debug', methods=['GET'])
 def debug_info():
     """Отладочная информация"""
+    # Создаем файлы если их нет
+    ensure_file_exists('pending_payments.json', [])
+    ensure_file_exists('processed_payments.json', [])
+    ensure_file_exists('balances.json', {})
+    
+    # Проверяем размеры файлов
+    files_info = {}
+    for filename in ['user_mappings.json', 'processed_payments.json', 'pending_payments.json', 'balances.json']:
+        if os.path.exists(filename):
+            files_info[filename] = os.path.getsize(filename)
+        else:
+            files_info[filename] = 0
+    
     return jsonify({
         "username_to_id_count": len(username_to_id),
         "processed_payments_count": len(processed_payments),
-        "pending_payments_exists": os.path.exists('pending_payments.json'),
+        "files": files_info,
         "timestamp": time.time(),
         "server_url": SERVER_URL
     })
 
 # Загружаем сохраненные данные при запуске
+ensure_file_exists('pending_payments.json', [])
+ensure_file_exists('processed_payments.json', [])
+ensure_file_exists('balances.json', {})
+ensure_file_exists('error_log.json', [])
+
 load_user_mappings()
 load_processed_payments()
 
@@ -515,6 +544,11 @@ def admin_debug(message):
         if message.from_user.id != ADMIN_CHAT_ID:
             return
         
+        # Создаем файлы если их нет
+        ensure_file_exists('pending_payments.json', [])
+        ensure_file_exists('processed_payments.json', [])
+        ensure_file_exists('balances.json', {})
+        
         # Проверяем файлы
         files_info = []
         for filename in ['user_mappings.json', 'processed_payments.json', 'pending_payments.json', 'balances.json']:
@@ -522,12 +556,25 @@ def admin_debug(message):
             size = os.path.getsize(filename) if exists else 0
             files_info.append(f"{filename}: {'✅' if exists else '❌'} ({size} байт)")
         
+        # Проверяем pending_payments.json
+        pending_info = "Нет данных"
+        if os.path.exists('pending_payments.json'):
+            try:
+                with open('pending_payments.json', 'r', encoding='utf-8') as f:
+                    pending_data = json.load(f)
+                    pending_processed = len([p for p in pending_data if p.get('processed', False)])
+                    pending_total = len(pending_data)
+                    pending_info = f"{pending_total} всего, {pending_processed} обработано, {pending_total - pending_processed} ожидает"
+            except:
+                pending_info = "Ошибка чтения"
+        
         debug_text = f"""
 <b>🔧 Отладочная информация:</b>
 
 <b>📊 Статистика:</b>
 👥 Пользователей: {len(username_to_id)}
 💰 Обработано платежей: {len(processed_payments)}
+⏳ Pending платежей: {pending_info}
 
 <b>📁 Файлы:</b>
 {chr(10).join(files_info)}
@@ -713,28 +760,6 @@ if __name__ == "__main__":
     print(f"🌐 Server URL: {SERVER_URL}")
     print(f"🔗 Многоразовый счет: {MULTI_USE_INVOICE_LINK}")
     print(f"📺 Канал с платежами ID: {PAYMENTS_CHANNEL_ID}")
-    
-    # Загружаем данные
-    load_user_mappings()
-    load_processed_payments()
-    
-    # Настраиваем Telegram webhook
-    print("\n📱 Настройка Telegram webhook...")
-    if setup_telegram_webhook():
-        print("✅ Telegram webhook успешно настроен!")
-    else:
-        print("⚠️ Не удалось настроить Telegram webhook")
-    
-    print("\n" + "=" * 60)
-    print("💡 ИНСТРУКЦИЯ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ:")
-    print("=" * 60)
-    print("1. Нажать кнопку '💳 Сделать ставку'")
-    print(f"2. Ввести сумму (минимум {MIN_BET} USDT)")
-    print("3. В комментарии: 'тип_ставки @username'")
-    print("4. Пример: 'куб_чет @myusername'")
-    print("5. Оплатить счёт")
-    print("6. Игра автоматически появится в канале!")
-    print("=" * 60)
     
     # Проверяем подключение к боту
     print("\n🤖 Проверка подключения к Telegram API...")
