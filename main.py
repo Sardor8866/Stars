@@ -6,6 +6,7 @@ import time
 import json
 import re
 import os
+import traceback
 from flask import Flask, request, jsonify
 from waitress import serve
 
@@ -26,7 +27,7 @@ ADMIN_CHAT_ID = 8118184388
 SERVER_URL = os.environ.get('SERVER_URL', 'https://stars-prok.onrender.com')
 
 # Ссылка на многоразовый счет (создан вручную через @CryptoBot)
-MULTI_USE_INVOICE_LINK = "https://t.me/send?start=IVNg7XnKzxBs"  # ЗАМЕНИ НА СВОЮ!
+MULTI_USE_INVOICE_LINK = "https://t.me/send?start=IVNg7XnKzxBs"
 
 # Инициализация модулей
 game = BettingGame(bot)
@@ -44,14 +45,35 @@ processed_payments = set()
 # Flask приложение
 app = Flask(__name__)
 
+def log_error(error_type, message, exc=None):
+    """Логирует ошибки в файл"""
+    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+    log_entry = {
+        'timestamp': timestamp,
+        'type': error_type,
+        'message': message,
+        'traceback': traceback.format_exc() if exc else None
+    }
+    
+    try:
+        with open('error_log.json', 'a', encoding='utf-8') as f:
+            json.dump(log_entry, f, ensure_ascii=False)
+            f.write('\n')
+    except:
+        pass
+    
+    print(f"❌ [{timestamp}] {error_type}: {message}")
+    if exc:
+        print(f"📋 Traceback: {traceback.format_exc()}")
+
 def save_user_info(user_id, username, first_name):
     """Сохраняет информацию о пользователе во всех местах"""
-    referral_system.save_user_info(user_id, username, first_name)
-
-    if username:
-        username_to_id[username.lower()] = user_id  # Сохраняем в нижнем регистре
-
     try:
+        referral_system.save_user_info(user_id, username, first_name)
+
+        if username:
+            username_to_id[username.lower()] = user_id
+
         try:
             with open('user_mappings.json', 'r', encoding='utf-8') as f:
                 user_mappings = json.load(f)
@@ -68,7 +90,7 @@ def save_user_info(user_id, username, first_name):
             json.dump(user_mappings, f, indent=4, ensure_ascii=False)
 
     except Exception as e:
-        print(f"⚠️ Ошибка сохранения user_mappings: {e}")
+        log_error("USER_SAVE_ERROR", f"Ошибка сохранения пользователя {user_id}: {e}", e)
 
 def load_user_mappings():
     """Загружает сохраненные маппинги пользователей"""
@@ -80,11 +102,12 @@ def load_user_mappings():
         for user_id_str, user_data in user_mappings.items():
             username = user_data.get('username', '')
             if username:
-                username_to_id[username.lower()] = int(user_id_str)  # В нижнем регистре
+                username_to_id[username.lower()] = int(user_id_str)
 
         print(f"✅ Загружено {len(username_to_id)} маппингов пользователей")
-    except:
-        print("ℹ️ Файл user_mappings.json не найден, создадим новый")
+    except Exception as e:
+        print("ℹ️ Файл user_mappings.json не найден или поврежден")
+        username_to_id = {}
 
 def load_processed_payments():
     """Загружает уже обработанные платежи из файла"""
@@ -95,25 +118,29 @@ def load_processed_payments():
             processed_payments = set(data)
         print(f"✅ Загружено {len(processed_payments)} обработанных платежей")
     except:
-        print("ℹ️ Файл processed_payments.json не найден, созданем новый")
+        print("ℹ️ Файл processed_payments.json не найден, создаем новый")
+        processed_payments = set()
 
 def save_processed_payment(payment_id):
     """Сохраняет ID обработанного платежа"""
-    processed_payments.add(payment_id)
     try:
+        processed_payments.add(payment_id)
         with open('processed_payments.json', 'w', encoding='utf-8') as f:
             json.dump(list(processed_payments), f, indent=4)
     except Exception as e:
-        print(f"⚠️ Ошибка сохранения processed_payments: {e}")
+        log_error("PAYMENT_SAVE_ERROR", f"Ошибка сохранения платежа {payment_id}: {e}", e)
 
 def process_pending_payments():
     """Обрабатывает сохраненные платежи из файла"""
     try:
         if not os.path.exists('pending_payments.json'):
+            print("ℹ️ Файл pending_payments.json не найден")
             return 0
         
         with open('pending_payments.json', 'r', encoding='utf-8') as f:
             pending_payments = json.load(f)
+        
+        print(f"🔍 Найдено {len(pending_payments)} платежей в pending_payments.json")
         
         new_processed = 0
         updated_payments = []
@@ -149,9 +176,12 @@ def process_pending_payments():
             if username and username.lower() in username_to_id:
                 user_id = username_to_id[username.lower()]
                 print(f"✅ Найден user_id: {user_id} для @{username}")
+            else:
+                print(f"⚠️ Не найден user_id для @{username}")
+                print(f"   Доступные username: {list(username_to_id.keys())[:10]}...")
             
             if not user_id:
-                print(f"⚠️ Не найден user_id для @{username}")
+                print(f"❌ Пропускаем платеж - user_id не найден")
                 updated_payments.append(payment)
                 continue
             
@@ -168,11 +198,28 @@ def process_pending_payments():
             
             # Создаем игру
             print(f"🎮 Создаю игру для {nickname}...")
-            if game.create_game_from_payment(user_id, username, amount, bet_type, nickname):
+            success = game.create_game_from_payment(user_id, username, amount, bet_type, nickname)
+            
+            if success:
                 payment['processed'] = True
                 new_processed += 1
                 save_processed_payment(payment_id)
                 print(f"✅ Успешно создана игра для платежа {payment_id}")
+                
+                # Уведомляем админа
+                try:
+                    bot.send_message(
+                        ADMIN_CHAT_ID,
+                        f"🎮 Новая ставка!\n\n"
+                        f"👤 Пользователь: {nickname} (@{username})\n"
+                        f"💰 Сумма: {amount} USDT\n"
+                        f"🎯 Ставка: {bet_type}\n"
+                        f"📅 Время: {time.strftime('%H:%M:%S')}",
+                        parse_mode='HTML'
+                    )
+                    print(f"📨 Уведомление отправлено админу")
+                except Exception as e:
+                    print(f"⚠️ Не удалось отправить уведомление админу: {e}")
             else:
                 print(f"❌ Ошибка создания игры для платежа {payment_id}")
             
@@ -184,11 +231,13 @@ def process_pending_payments():
         
         if new_processed > 0:
             print(f"\n✅ Обработано {new_processed} новых платежей из pending_payments.json")
+        else:
+            print(f"\nℹ️ Новых платежей для обработки не найдено")
         
         return new_processed
         
     except Exception as e:
-        print(f"❌ Ошибка обработки pending_payments: {e}")
+        log_error("PENDING_PAYMENTS_ERROR", f"Ошибка обработки pending_payments: {e}", e)
         return 0
 
 # Flask роуты
@@ -222,7 +271,7 @@ def telegram_webhook():
         else:
             return 'Invalid content type', 400
     except Exception as e:
-        print(f"❌ Ошибка обработки Telegram webhook: {e}")
+        log_error("WEBHOOK_ERROR", f"Ошибка обработки Telegram webhook: {e}", e)
         return 'Error', 500
 
 @app.route('/check_payments', methods=['POST'])
@@ -238,6 +287,17 @@ def manual_check():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/debug', methods=['GET'])
+def debug_info():
+    """Отладочная информация"""
+    return jsonify({
+        "username_to_id_count": len(username_to_id),
+        "processed_payments_count": len(processed_payments),
+        "pending_payments_exists": os.path.exists('pending_payments.json'),
+        "timestamp": time.time(),
+        "server_url": SERVER_URL
+    })
+
 # Загружаем сохраненные данные при запуске
 load_user_mappings()
 load_processed_payments()
@@ -247,55 +307,67 @@ print("\n🔍 Проверяю накопленные платежи...")
 initial_processed = process_pending_payments()
 if initial_processed > 0:
     print(f"✅ При запуске обработано {initial_processed} платежей")
+else:
+    print(f"ℹ️ Новых платежей при запуске не найдено")
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
-    save_user_info(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.first_name
-    )
+    try:
+        print(f"👋 Команда /start от {message.from_user.id} (@{message.from_user.username})")
+        
+        save_user_info(
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name
+        )
 
-    # Проверяем реферальную ссылку
-    if len(message.text.split()) > 1:
-        ref_code = message.text.split()[1]
-        if ref_code.startswith('ref'):
-            try:
-                referrer_id = int(ref_code[3:])
-                referral_system.register_referral(
-                    referee_id=message.from_user.id,
-                    referrer_id=referrer_id,
-                    referee_username=message.from_user.username,
-                    referee_first_name=message.from_user.first_name
-                )
-            except Exception as e:
-                print(f"❌ Ошибка обработки реферальной ссылки: {e}")
+        # Проверяем реферальную ссылку
+        if len(message.text.split()) > 1:
+            ref_code = message.text.split()[1]
+            if ref_code.startswith('ref'):
+                try:
+                    referrer_id = int(ref_code[3:])
+                    referral_system.register_referral(
+                        referee_id=message.from_user.id,
+                        referrer_id=referrer_id,
+                        referee_username=message.from_user.username,
+                        referee_first_name=message.from_user.first_name
+                    )
+                except Exception as e:
+                    print(f"❌ Ошибка обработки реферальной ссылки: {e}")
 
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    btn1 = types.KeyboardButton("👛Баланс")
-    btn2 = types.KeyboardButton("🤝 Партнеры")
-    btn3 = types.KeyboardButton("🎮 Играть")
-    markup.add(btn1, btn2, btn3)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        btn1 = types.KeyboardButton("👛Баланс")
+        btn2 = types.KeyboardButton("🤝 Партнеры")
+        btn3 = types.KeyboardButton("🎮 Играть")
+        markup.add(btn1, btn2, btn3)
 
-    welcome_text = """
+        welcome_text = """
 <b>🏠 Главное меню</b>
 <blockquote>Выберите раздел:</blockquote>
-    """
-    bot.send_message(message.chat.id, welcome_text,
-                     parse_mode='HTML', reply_markup=markup)
+        """
+        bot.send_message(message.chat.id, welcome_text,
+                         parse_mode='HTML', reply_markup=markup)
+        
+        print(f"✅ Главное меню отправлено {message.from_user.id}")
+    except Exception as e:
+        log_error("START_COMMAND_ERROR", f"Ошибка в команде /start: {e}", e)
 
 @bot.message_handler(func=lambda message: message.text == "👛Баланс")
 def show_profile(message):
-    save_user_info(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.first_name
-    )
+    try:
+        print(f"💰 Запрос баланса от {message.from_user.id}")
+        
+        save_user_info(
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name
+        )
 
-    user_id = message.from_user.id
-    balance = game.get_balance(user_id)
-    
-    instruction_text = f"""
+        user_id = message.from_user.id
+        balance = game.get_balance(user_id)
+        
+        instruction_text = f"""
 <b>💳 Как сделать ставку через многоразовый счёт:</b>
 
 1. Нажмите кнопку "💳 Сделать ставку" ниже
@@ -323,34 +395,46 @@ def show_profile(message):
 <b>📝 Ваш username для комментария: @{message.from_user.username}</b>
 """
 
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    btn1 = types.InlineKeyboardButton("💳 Сделать ставку", url=MULTI_USE_INVOICE_LINK)
-    markup.add(btn1)
-    
-    image_url = "https://iimg.su/i/u0SuFd"
-    bot.send_photo(message.chat.id,
-                   photo=image_url,
-                   caption=instruction_text,
-                   parse_mode='HTML',
-                   reply_markup=markup)
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        btn1 = types.InlineKeyboardButton("💳 Сделать ставку", url=MULTI_USE_INVOICE_LINK)
+        markup.add(btn1)
+        
+        image_url = "https://iimg.su/i/u0SuFd"
+        bot.send_photo(message.chat.id,
+                       photo=image_url,
+                       caption=instruction_text,
+                       parse_mode='HTML',
+                       reply_markup=markup)
+        
+        print(f"✅ Баланс отправлен {message.from_user.id}: {balance} USDT")
+    except Exception as e:
+        log_error("BALANCE_ERROR", f"Ошибка показа баланса: {e}", e)
 
 @bot.message_handler(func=lambda message: message.text == "🤝 Партнеры")
 def show_partners(message):
-    save_user_info(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.first_name
-    )
-    referral_system.show_menu(message)
+    try:
+        print(f"🤝 Запрос партнеров от {message.from_user.id}")
+        save_user_info(
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name
+        )
+        referral_system.show_menu(message)
+    except Exception as e:
+        log_error("PARTNERS_ERROR", f"Ошибка показа партнеров: {e}", e)
 
 @bot.message_handler(func=lambda message: message.text == "🎮 Играть")
 def show_games(message):
-    save_user_info(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.first_name
-    )
-    game.show_games_menu(message)
+    try:
+        print(f"🎮 Запрос игр от {message.from_user.id}")
+        save_user_info(
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name
+        )
+        game.show_games_menu(message)
+    except Exception as e:
+        log_error("GAMES_ERROR", f"Ошибка показа игр: {e}", e)
 
 # Обработчик сообщений из канала с платежами
 @bot.message_handler(func=lambda message: message.chat.id == PAYMENTS_CHANNEL_ID)
@@ -358,24 +442,29 @@ def handle_payment_channel(message):
     """Обрабатывает сообщения из канала с платежами"""
     try:
         print(f"\n📩 Получено сообщение из канала платежей (ID: {message.message_id})")
+        print(f"📝 Текст сообщения:\n{message.text}")
         
         # Пробуем обработать как платеж
         if game.process_payment_from_channel(message):
             print(f"✅ Сообщение {message.message_id} распознано как платеж")
             
             # Немедленно обрабатываем накопленные платежи
-            process_pending_payments()
+            processed = process_pending_payments()
+            print(f"✅ Обработано {processed} платежей после нового сообщения")
         else:
             print(f"⚠️ Сообщение {message.message_id} не распознано как платеж")
             
     except Exception as e:
-        print(f"❌ Ошибка обработки сообщения из канала: {e}")
+        log_error("CHANNEL_HANDLER_ERROR", f"Ошибка обработки сообщения из канала: {e}", e)
 
 @bot.message_handler(commands=['add'])
 def admin_add_balance(message):
-    if message.from_user.id != ADMIN_CHAT_ID:
-        return
     try:
+        if message.from_user.id != ADMIN_CHAT_ID:
+            return
+        
+        print(f"➕ Админ команда /add от {message.from_user.id}")
+        
         parts = message.text.split()
         if len(parts) < 3:
             bot.reply_to(message, "❌ Использование: /add username сумма")
@@ -388,47 +477,93 @@ def admin_add_balance(message):
             user_id = username_to_id[username]
             game.add_balance(user_id, amount)
             bot.reply_to(message, f"✅ Добавлено {amount} USDT пользователю @{username} (ID: {user_id})")
+            print(f"✅ Админ добавил {amount} USDT @{username}")
         else:
             try:
                 user_id = int(username)
                 game.add_balance(user_id, amount)
                 bot.reply_to(message, f"✅ Добавлено {amount} USDT пользователю ID: {user_id}")
+                print(f"✅ Админ добавил {amount} USDT ID: {user_id}")
             except ValueError:
                 bot.reply_to(message, f"❌ Пользователь @{username} не найден.")
+                print(f"❌ Пользователь @{username} не найден")
 
     except Exception as e:
+        log_error("ADD_BALANCE_ERROR", f"Ошибка команды /add: {e}", e)
         bot.reply_to(message, f"❌ Ошибка: {e}")
 
 @bot.message_handler(commands=['check'])
 def admin_check_payments(message):
     """Админ команда для ручной проверки платежей"""
-    if message.from_user.id != ADMIN_CHAT_ID:
-        return
-    
-    bot.reply_to(message, "🔄 Проверяю платежи...")
-    processed = process_pending_payments()
-    bot.reply_to(message, f"✅ Проверка завершена!\nОбработано новых: {processed} платежей\nВсего: {len(processed_payments)} платежей")
+    try:
+        if message.from_user.id != ADMIN_CHAT_ID:
+            return
+        
+        print(f"🔍 Админ проверяет платежи")
+        
+        bot.reply_to(message, "🔄 Проверяю платежи...")
+        processed = process_pending_payments()
+        bot.reply_to(message, f"✅ Проверка завершена!\nОбработано новых: {processed} платежей\nВсего: {len(processed_payments)} платежей")
+        
+    except Exception as e:
+        log_error("CHECK_PAYMENTS_ERROR", f"Ошибка команды /check: {e}", e)
+
+@bot.message_handler(commands=['debug'])
+def admin_debug(message):
+    """Отладочная информация для админа"""
+    try:
+        if message.from_user.id != ADMIN_CHAT_ID:
+            return
+        
+        # Проверяем файлы
+        files_info = []
+        for filename in ['user_mappings.json', 'processed_payments.json', 'pending_payments.json', 'balances.json']:
+            exists = os.path.exists(filename)
+            size = os.path.getsize(filename) if exists else 0
+            files_info.append(f"{filename}: {'✅' if exists else '❌'} ({size} байт)")
+        
+        debug_text = f"""
+<b>🔧 Отладочная информация:</b>
+
+<b>📊 Статистика:</b>
+👥 Пользователей: {len(username_to_id)}
+💰 Обработано платежей: {len(processed_payments)}
+
+<b>📁 Файлы:</b>
+{chr(10).join(files_info)}
+
+<b>🔍 Примеры username:</b>
+{chr(10).join([f'@{k} → {v}' for k, v in list(username_to_id.items())[:5]])}
+"""
+        
+        bot.reply_to(message, debug_text, parse_mode='HTML')
+        
+    except Exception as e:
+        log_error("DEBUG_ERROR", f"Ошибка команды /debug: {e}", e)
 
 @bot.message_handler(commands=['stats'])
 def admin_stats(message):
-    if message.from_user.id != ADMIN_CHAT_ID:
-        return
-
-    total_users = len(game.user_balances)
-    total_balance = sum(game.user_balances.values())
-    ref_stats = referral_system.get_stats(ADMIN_CHAT_ID)
-
-    # Получаем количество pending платежей
-    pending_count = 0
     try:
-        if os.path.exists('pending_payments.json'):
-            with open('pending_payments.json', 'r', encoding='utf-8') as f:
-                pending_payments = json.load(f)
-                pending_count = len([p for p in pending_payments if not p.get('processed', False)])
-    except:
-        pass
+        if message.from_user.id != ADMIN_CHAT_ID:
+            return
 
-    stats_text = f"""
+        print(f"📊 Админ запросил статистику")
+
+        total_users = len(game.user_balances)
+        total_balance = sum(game.user_balances.values())
+        ref_stats = referral_system.get_stats(ADMIN_CHAT_ID)
+
+        # Получаем количество pending платежей
+        pending_count = 0
+        try:
+            if os.path.exists('pending_payments.json'):
+                with open('pending_payments.json', 'r', encoding='utf-8') as f:
+                    pending_payments = json.load(f)
+                    pending_count = len([p for p in pending_payments if not p.get('processed', False)])
+        except Exception as e:
+            print(f"⚠️ Ошибка чтения pending_payments: {e}")
+
+        stats_text = f"""
 <b>📊 Статистика бота</b>
 👥 Всего пользователей: <b>{total_users}</b>
 💰 Общий баланс: <b>{total_balance:.2f} USDT</b>
@@ -440,86 +575,97 @@ def admin_stats(message):
 ├ Приглашено: <b>{ref_stats['total_refs']} чел.</b>
 ├ Доступно: <b>{ref_stats['available']:.2f} USDT</b>
 └ Выведено: <b>{ref_stats['withdrawn']:.2f} USDT</b>
-    """
-    bot.reply_to(message, stats_text, parse_mode='HTML')
+        """
+        bot.reply_to(message, stats_text, parse_mode='HTML')
+        
+    except Exception as e:
+        log_error("STATS_ERROR", f"Ошибка команды /stats: {e}", e)
 
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_text(message):
-    save_user_info(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.first_name
-    )
+    try:
+        save_user_info(
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name
+        )
 
-    if referral_system.process_withdraw(message):
-        return
+        if referral_system.process_withdraw(message):
+            return
 
-    if game.process_bet_amount(message):
-        return
+        if game.process_bet_amount(message):
+            return
+            
+    except Exception as e:
+        log_error("TEXT_HANDLER_ERROR", f"Ошибка обработки текста: {e}", e)
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    save_user_info(
-        call.from_user.id,
-        call.from_user.username,
-        call.from_user.first_name
-    )
+    try:
+        save_user_info(
+            call.from_user.id,
+            call.from_user.username,
+            call.from_user.first_name
+        )
 
-    if call.data == "menu":
-        send_welcome(call.message)
-    
-    # Реферальные callback-ы
-    elif call.data in ["ref_menu", "ref_list", "ref_withdraw", "ref_share"]:
-        if call.data == "ref_menu":
-            referral_system.show_menu(call)
-        elif call.data == "ref_list":
-            referral_system.show_ref_list(call)
-        elif call.data == "ref_withdraw":
-            referral_system.show_withdraw(call)
-        elif call.data == "ref_share":
-            referral_system.show_share(call)
-    
-    # Игровые callback-ы - КУБИК
-    elif call.data == "game_dice":
-        game.show_dice_menu(call)
-    elif call.data == "bet_dice_exact":
-        game.show_exact_numbers(call)
-    elif call.data.startswith("bet_dice_"):
-        bet_type = call.data.replace("bet_dice_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    
-    # БАСКЕТБОЛ
-    elif call.data == "game_basketball":
-        game.show_basketball_menu(call)
-    elif call.data.startswith("bet_basketball_"):
-        bet_type = call.data.replace("bet_basketball_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    
-    # ФУТБОЛ
-    elif call.data == "game_football":
-        game.show_football_menu(call)
-    elif call.data.startswith("bet_football_"):
-        bet_type = call.data.replace("bet_football_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    
-    # ДАРТС
-    elif call.data == "game_darts":
-        game.show_darts_menu(call)
-    elif call.data.startswith("bet_darts_"):
-        bet_type = call.data.replace("bet_darts_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    
-    # БОУЛИНГ
-    elif call.data == "game_bowling":
-        game.show_bowling_menu(call)
-    elif call.data.startswith("bet_bowling_"):
-        bet_type = call_data.replace("bet_bowling_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
+        if call.data == "menu":
+            send_welcome(call.message)
+        
+        # Реферальные callback-ы
+        elif call.data in ["ref_menu", "ref_list", "ref_withdraw", "ref_share"]:
+            if call.data == "ref_menu":
+                referral_system.show_menu(call)
+            elif call.data == "ref_list":
+                referral_system.show_ref_list(call)
+            elif call.data == "ref_withdraw":
+                referral_system.show_withdraw(call)
+            elif call.data == "ref_share":
+                referral_system.show_share(call)
+        
+        # Игровые callback-ы - КУБИК
+        elif call.data == "game_dice":
+            game.show_dice_menu(call)
+        elif call.data == "bet_dice_exact":
+            game.show_exact_numbers(call)
+        elif call.data.startswith("bet_dice_"):
+            bet_type = call.data.replace("bet_dice_", "")
+            if bet_type in BET_TYPES:
+                game.request_amount(call, bet_type)
+        
+        # БАСКЕТБОЛ
+        elif call.data == "game_basketball":
+            game.show_basketball_menu(call)
+        elif call.data.startswith("bet_basketball_"):
+            bet_type = call.data.replace("bet_basketball_", "")
+            if bet_type in BET_TYPES:
+                game.request_amount(call, bet_type)
+        
+        # ФУТБОЛ
+        elif call.data == "game_football":
+            game.show_football_menu(call)
+        elif call.data.startswith("bet_football_"):
+            bet_type = call.data.replace("bet_football_", "")
+            if bet_type in BET_TYPES:
+                game.request_amount(call, bet_type)
+        
+        # ДАРТС
+        elif call.data == "game_darts":
+            game.show_darts_menu(call)
+        elif call.data.startswith("bet_darts_"):
+            bet_type = call.data.replace("bet_darts_", "")
+            if bet_type in BET_TYPES:
+                game.request_amount(call, bet_type)
+        
+        # БОУЛИНГ
+        elif call.data == "game_bowling":
+            game.show_bowling_menu(call)
+        elif call.data.startswith("bet_bowling_"):
+            bet_type = call.data.replace("bet_bowling_", "")
+            if bet_type in BET_TYPES:
+                game.request_amount(call, bet_type)
+                
+    except Exception as e:
+        log_error("CALLBACK_ERROR", f"Ошибка обработки callback: {e}", e)
 
 def setup_telegram_webhook():
     """Настраивает Telegram webhook"""
@@ -543,7 +689,7 @@ def setup_telegram_webhook():
         return True
         
     except Exception as e:
-        print(f"❌ Ошибка установки Telegram webhook: {e}")
+        log_error("WEBHOOK_SETUP_ERROR", f"Ошибка установки Telegram webhook: {e}", e)
         return False
 
 def run_flask():
@@ -551,7 +697,12 @@ def run_flask():
     port = int(os.environ.get('PORT', 10000))
     print(f"🚀 Запуск Flask сервера на порту {port}")
     print(f"🌐 URL: {SERVER_URL}")
-    serve(app, host='0.0.0.0', port=port)
+    
+    # Проверяем доступность порта
+    try:
+        serve(app, host='0.0.0.0', port=port)
+    except Exception as e:
+        log_error("FLASK_ERROR", f"Ошибка запуска Flask: {e}", e)
 
 if __name__ == "__main__":
     print("=" * 60)
@@ -561,7 +712,7 @@ if __name__ == "__main__":
     print(f"💰 Минимальная ставка: {MIN_BET} USDT")
     print(f"🌐 Server URL: {SERVER_URL}")
     print(f"🔗 Многоразовый счет: {MULTI_USE_INVOICE_LINK}")
-    print(f"📺 Канал с платежами: {PAYMENTS_CHANNEL_ID}")
+    print(f"📺 Канал с платежами ID: {PAYMENTS_CHANNEL_ID}")
     
     # Загружаем данные
     load_user_mappings()
@@ -584,6 +735,14 @@ if __name__ == "__main__":
     print("5. Оплатить счёт")
     print("6. Игра автоматически появится в канале!")
     print("=" * 60)
+    
+    # Проверяем подключение к боту
+    print("\n🤖 Проверка подключения к Telegram API...")
+    try:
+        bot_info = bot.get_me()
+        print(f"✅ Бот подключен: @{bot_info.username} ({bot_info.first_name})")
+    except Exception as e:
+        print(f"❌ Ошибка подключения к Telegram: {e}")
     
     print("\n🚀 Запуск Flask сервера...")
     # Запускаем Flask сервер (он будет работать в основном потоке)
