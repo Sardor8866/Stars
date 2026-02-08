@@ -158,7 +158,7 @@ class BettingGame:
         куб_чет @relessorg
         '''
         """
-        print(f"\n🔍 Парсим сообщение из канала (новый формат)")
+        print(f"\n🔍 Парсим сообщение из канала")
         print(f"📝 Текст для парсинга:\n{message_text}")
         print("-" * 50)
         
@@ -169,149 +169,100 @@ class BettingGame:
             'full_name': '',
             'payment_id': None,
             'currency': 'USDT',
-            'is_cryptobot': False
+            'is_cryptobot': False,
+            'raw_text': message_text  # Сохраняем оригинальный текст
         }
         
         try:
-            lines = [line.strip() for line in message_text.strip().split('\n')]
-            lines = [line for line in lines if line]  # Удаляем пустые строки
+            # Очищаем текст от лишних пробелов и разбиваем на строки
+            lines = [line.strip() for line in message_text.strip().split('\n') if line.strip()]
+            print(f"📋 Очищенные строки ({len(lines)}): {lines}")
             
-            print(f"📋 Строки после очистки: {lines}")
+            # ========== ОБРАБОТКА КЛЮЧЕВЫХ СТРОК ==========
             
-            # ========== ПРОВЕРКА ВСЕХ ВОЗМОЖНЫХ ФОРМАТОВ ==========
+            # 1. Ищем строку с суммой (CryptoBot формат)
+            amount_line = None
+            for line in lines:
+                if 'отправил(a)' in line or 'отправил(а)' in line:
+                    amount_line = line
+                    payment_data['is_cryptobot'] = True
+                    break
             
-            # 1. Формат с "отправил(a) 0.150117 USDT" - исправленная версия
-            if any('отправил(a)' in line or 'отправил(а)' in line for line in lines):
-                payment_data['is_cryptobot'] = True
+            if amount_line:
+                print(f"💰 Найдена строка с суммой: {amount_line}")
                 
-                # Находим строку с суммой
-                amount_line = None
-                for line in lines:
-                    if 'отправил(a)' in line or 'отправил(а)' in line:
-                        amount_line = line
-                        break
-                
-                if amount_line:
-                    print(f"📊 Найдена строка с суммой: {amount_line}")
-                    
-                    # Ищем сумму в формате: отправил(a) 0.150117 USDT
-                    amount_match = re.search(r'отправил\([аa]\)\s+([\d.]+)\s+USDT', amount_line, re.IGNORECASE)
-                    if amount_match:
-                        payment_data['amount'] = float(amount_match.group(1))
-                        payment_data['currency'] = 'USDT'
-                        print(f"✅ Сумма найдена: {payment_data['amount']} {payment_data['currency']}")
-                    else:
-                        # Пробуем другой формат: отправил(a) 0.150117 USDT ($0.15)
-                        amount_match = re.search(r'([\d.]+)\s+USDT', amount_line)
-                        if amount_match:
-                            payment_data['amount'] = float(amount_match.group(1))
-                            payment_data['currency'] = 'USDT'
-                            print(f"✅ Сумма найдена (альтернативный формат): {payment_data['amount']} {payment_data['currency']}")
-                
-                # Ищем username и комментарий в оставшихся строках
-                for line in lines:
-                    # Пропускаем строку с суммой
-                    if amount_line and line == amount_line:
-                        continue
-                    
-                    print(f"📝 Анализируем строку: '{line}'")
-                    
-                    # Проверяем, есть ли username в строке (@username)
-                    username_match = re.search(r'@(\w+)', line)
-                    if username_match:
-                        username = username_match.group(1).lower()
-                        payment_data['username'] = username
-                        print(f"✅ Username найден: @{username}")
-                        
-                        # Удаляем username из строки для получения чистого комментария
-                        line_without_username = re.sub(r'@\w+', '', line).strip()
-                        
-                        # Если в строке остался текст после удаления username - это комментарий
-                        if line_without_username:
-                            # Если комментарий уже есть, добавляем через пробел
-                            if payment_data['comment']:
-                                payment_data['comment'] += f" {line_without_username}"
-                            else:
-                                payment_data['comment'] = line_without_username
-                            print(f"✅ Комментарий найден: '{payment_data['comment']}'")
-                    else:
-                        # Если нет username, вся строка считается комментарием
-                        if line and line not in ['Crypto Bot', 'Use @CryptoBot to buy, sell, store, @send and pay with cryptocurrency right in Telegram']:
-                            # Если комментарий уже есть, добавляем через пробел
-                            if payment_data['comment']:
-                                payment_data['comment'] += f" {line}"
-                            else:
-                                payment_data['comment'] = line
-                            print(f"✅ Строка добавлена как комментарий: '{line}'")
-                
-                # Генерируем payment_id на основе времени и суммы
-                if payment_data['amount'] > 0:
-                    payment_data['payment_id'] = f"cryptobot_{int(time.time())}_{payment_data['amount']}"
-            
-            # 2. Старый формат CryptoBot с Invoice #
-            elif 'Invoice #' in message_text:
-                payment_data['is_cryptobot'] = True
-                
-                # Ищем ID платежа (Invoice #)
-                invoice_match = re.search(r'Invoice #(\d+)', message_text)
-                if invoice_match:
-                    payment_data['payment_id'] = invoice_match.group(1)
-                
-                # Ищем сумму
-                amount_match = re.search(r'Amount:\s*([\d.]+)\s*(\w+)', message_text)
-                if amount_match:
-                    payment_data['amount'] = float(amount_match.group(1))
-                    payment_data['currency'] = amount_match.group(2)
-                
-                # Ищем username
-                username_match = re.search(r'From:\s*@(\w+)', message_text)
-                if username_match:
-                    payment_data['username'] = username_match.group(1).lower()
-                
-                # Ищем комментарий
-                comment_match = re.search(r'Comment:\s*(.+?)(?:\n|$)', message_text)
-                if comment_match:
-                    payment_data['comment'] = comment_match.group(1).strip()
-            
-            # 3. Простой формат с суммой и username
-            else:
-                # Ищем сумму USDT
-                amount_match = re.search(r'([\d.]+)\s*USDT', message_text, re.IGNORECASE)
+                # Извлекаем сумму из строки
+                amount_match = re.search(r'([\d.]+)\s+USDT', amount_line)
                 if amount_match:
                     payment_data['amount'] = float(amount_match.group(1))
                     payment_data['currency'] = 'USDT'
-                    payment_data['is_cryptobot'] = True
+                    print(f"✅ Сумма извлечена: {payment_data['amount']} {payment_data['currency']}")
+                else:
+                    print(f"⚠️ Не удалось извлечь сумму из строки")
+            
+            # 2. Ищем строку с username и ставкой
+            for line in lines:
+                # Пропускаем строку с суммой и рекламные строки
+                if line == amount_line:
+                    continue
+                if 'Crypto Bot' in line or 'Use @CryptoBot' in line:
+                    continue
                 
-                # Ищем username
-                username_match = re.search(r'@(\w+)', message_text)
+                print(f"🔍 Анализируем строку: '{line}'")
+                
+                # Ищем username в формате @username
+                username_match = re.search(r'@([a-zA-Z0-9_]+)', line)
                 if username_match:
-                    payment_data['username'] = username_match.group(1).lower()
-                
-                # Ищем комментарий (все, что не сумма и не username)
-                if payment_data['username']:
-                    # Удаляем username из текста
-                    text_without_username = re.sub(r'@\w+', '', message_text).strip()
-                    # Удаляем сумму из текста
-                    text_without_amount = re.sub(r'[\d.]+\s*USDT', '', text_without_username, flags=re.IGNORECASE).strip()
-                    # Оставляем только комментарий
-                    payment_data['comment'] = text_without_amount
-                
-                # Генерируем ID
-                if payment_data['amount'] > 0:
-                    payment_data['payment_id'] = f"simple_{int(time.time())}_{payment_data['amount']}"
+                    username = username_match.group(1).lower()
+                    payment_data['username'] = username
+                    print(f"✅ Username найден: @{username}")
+                    
+                    # Извлекаем оставшийся текст как комментарий/ставку
+                    remaining_text = re.sub(r'@[a-zA-Z0-9_]+', '', line).strip()
+                    if remaining_text:
+                        payment_data['comment'] = remaining_text
+                        print(f"✅ Комментарий/ставка: '{remaining_text}'")
+                    break
+                else:
+                    # Если нет username, вся строка считается комментарием
+                    if line and len(line) > 2:  # Игнорируем очень короткие строки
+                        payment_data['comment'] = line
+                        print(f"✅ Строка сохранена как комментарий: '{line}'")
             
-            # Если нашли данные
-            if payment_data['payment_id'] or payment_data['amount'] > 0:
-                print(f"\n✅ РЕЗУЛЬТАТ ПАРСИНГА:")
-                print(f"ID: {payment_data.get('payment_id')}")
-                print(f"Сумма: {payment_data.get('amount')} {payment_data.get('currency')}")
-                print(f"Username: @{payment_data.get('username')}")
-                print(f"Комментарий: '{payment_data.get('comment')}'")
-                print(f"Источник: {'CryptoBot' if payment_data.get('is_cryptobot') else 'Другой'}")
-                return payment_data
+            # 3. Если не нашли username, но есть комментарий, проверяем комментарий на наличие username
+            if not payment_data['username'] and payment_data['comment']:
+                username_match = re.search(r'@([a-zA-Z0-9_]+)', payment_data['comment'])
+                if username_match:
+                    username = username_match.group(1).lower()
+                    payment_data['username'] = username
+                    # Удаляем username из комментария
+                    payment_data['comment'] = re.sub(r'@[a-zA-Z0-9_]+', '', payment_data['comment']).strip()
+                    print(f"✅ Username найден в комментарии: @{username}")
             
-            print("⚠️ Неизвестный формат сообщения")
-            return None
+            # 4. Генерируем ID платежа
+            if payment_data['amount'] > 0:
+                timestamp = int(time.time())
+                payment_data['payment_id'] = f"cryptobot_{timestamp}_{payment_data['amount']}"
+                print(f"✅ Сгенерирован ID платежа: {payment_data['payment_id']}")
+            
+            # ========== ВЫВОД РЕЗУЛЬТАТА ==========
+            print(f"\n✅ РЕЗУЛЬТАТ ПАРСИНГА:")
+            print(f"   ID: {payment_data.get('payment_id')}")
+            print(f"   Сумма: {payment_data.get('amount')} {payment_data.get('currency')}")
+            print(f"   Username: @{payment_data.get('username')}")
+            print(f"   Комментарий: '{payment_data.get('comment')}'")
+            print(f"   Источник: {'CryptoBot' if payment_data.get('is_cryptobot') else 'Другой'}")
+            
+            # Проверяем минимальные требования для платежа
+            if payment_data['amount'] < MIN_BET:
+                print(f"⚠️ Сумма меньше минимальной ставки ({MIN_BET} USDT)")
+                return None
+            
+            if not payment_data['username']:
+                print(f"⚠️ Не найден username")
+                return None
+            
+            return payment_data
             
         except Exception as e:
             print(f"❌ Ошибка парсинга сообщения: {e}")
@@ -328,56 +279,63 @@ class BettingGame:
         comment = comment.strip().lower()
         print(f"🔍 Анализируем комментарий: '{comment}'")
         
-        # Проверяем точное совпадение
-        if comment in BET_TYPES:
-            print(f"✅ Найдено точное совпадение: {comment}")
-            return comment
+        # Удаляем лишние пробелы и символы
+        comment_clean = re.sub(r'\s+', '_', comment)
         
-        # Разбиваем комментарий на части (могут быть несколько строк или слов)
-        parts = re.split(r'[\s\n]+', comment)
-        parts = [part for part in parts if part]  # Удаляем пустые
+        # 1. Проверяем точное совпадение
+        if comment_clean in BET_TYPES:
+            print(f"✅ Найдено точное совпадение: {comment_clean}")
+            return comment_clean
         
-        print(f"📋 Части комментария: {parts}")
-        
-        # Проверяем комбинации слов
-        for i in range(len(parts)):
-            for j in range(i+1, min(len(parts)+1, i+3)):
-                # Пробуем с подчеркиванием
-                combined_underscore = '_'.join(parts[i:j])
-                if combined_underscore in BET_TYPES:
-                    print(f"✅ Найдено совпадение в комбинации: {combined_underscore}")
-                    return combined_underscore
-                
-                # Пробуем с дефисом
-                combined_dash = '-'.join(parts[i:j])
-                if combined_dash in BET_TYPES:
-                    print(f"✅ Найдено совпадение в комбинации: {combined_dash}")
-                    return combined_dash
-        
-        # Пробуем найти похожие
+        # 2. Проверяем совпадение без учета регистра и с разными разделителями
         for bet_type in BET_TYPES.keys():
-            # Проверяем, содержится ли тип ставки в комментарии
-            if bet_type in comment:
-                print(f"📌 Найдено похожее: {bet_type} в '{comment}'")
+            bet_clean = bet_type.lower()
+            
+            # Прямое сравнение
+            if comment_clean == bet_clean:
+                print(f"✅ Найдено совпадение: {bet_type}")
                 return bet_type
             
-            # Проверяем, содержится ли комментарий в типе ставки
-            if comment in bet_type:
-                print(f"📌 Найдено похожее: комментарий '{comment}' в {bet_type}")
+            # Проверяем частичное совпадение
+            if bet_clean in comment_clean or comment_clean in bet_clean:
+                print(f"✅ Найдено частичное совпадение: {bet_type} в '{comment_clean}'")
                 return bet_type
         
-        # Проверяем части типов ставок
-        for bet_type in BET_TYPES.keys():
-            bet_parts = bet_type.split('_')
-            if len(bet_parts) > 1:
-                # Проверяем, содержатся ли части типа ставки в комментарии
-                match_count = sum(1 for part in bet_parts if part in comment)
-                if match_count >= len(bet_parts) - 1:  # Допускаем одну ошибку
-                    print(f"📌 Найдено частичное совпадение: {bet_type} в '{comment}'")
+        # 3. Проверяем по ключевым словам
+        bet_keywords = {
+            'чет': 'куб_чет',
+            'нечет': 'куб_нечет',
+            'мал': 'куб_мал',
+            'меньше': 'куб_мал',
+            'бол': 'куб_бол',
+            'больше': 'куб_бол',
+            'гол': ['баскет_гол', 'футбол_гол'],
+            'мимо': ['баскет_мимо', 'футбол_мимо', 'дартс_мимо'],
+            'бел': 'дартс_белое',
+            'крас': 'дартс_красное',
+            'центр': 'дартс_центр',
+            'пораж': 'боулинг_поражение',
+            'побед': 'боулинг_победа',
+            'страйк': 'боулинг_страйк',
+        }
+        
+        for keyword, bet_type in bet_keywords.items():
+            if keyword in comment_clean:
+                print(f"✅ Найдено по ключевому слову '{keyword}': {bet_type}")
+                if isinstance(bet_type, list):
+                    # Возвращаем первый вариант из списка
+                    return bet_type[0]
+                return bet_type
+        
+        # 4. Проверяем по числам для кубика
+        for num in range(1, 7):
+            if str(num) in comment_clean:
+                bet_type = f'куб_{num}'
+                if bet_type in BET_TYPES:
+                    print(f"✅ Найдено по числу {num}: {bet_type}")
                     return bet_type
         
         print(f"❌ Не удалось определить тип ставки из комментария: '{comment}'")
-        print(f"ℹ️ Доступные типы ставок: {', '.join(list(BET_TYPES.keys())[:10])}...")
         return None
 
     def process_payment_from_channel(self, message):
@@ -393,22 +351,17 @@ class BettingGame:
             print(f"📝 Текст сообщения:\n{message.text}")
             print("-" * 50)
             
+            # Парсим сообщение
             payment_data = self.parse_payment_message(message.text)
             if not payment_data:
                 print("❌ Не удалось распарсить платеж")
                 return False
             
+            # Извлекаем данные
             payment_id = payment_data.get('payment_id')
             amount = payment_data.get('amount', 0)
             username = payment_data.get('username')
             comment = payment_data.get('comment', '')
-            
-            print(f"\n📊 РЕЗУЛЬТАТ ПАРСИНГА:")
-            print(f"   ID платежа: {payment_id}")
-            print(f"   Сумма: {amount} {payment_data.get('currency', 'USDT')}")
-            print(f"   Username: @{username}")
-            print(f"   Комментарий: '{comment}'")
-            print(f"   Формат: {'CryptoBot' if payment_data.get('is_cryptobot') else 'Другой'}")
             
             # Проверяем минимальную сумму
             if amount < MIN_BET:
@@ -425,7 +378,6 @@ class BettingGame:
             bet_type = self.parse_bet_from_comment(comment)
             if not bet_type:
                 print(f"⚠️ Не удалось определить тип ставки из: '{comment}'")
-                print(f"ℹ️ Доступные типы ставок: {', '.join(list(BET_TYPES.keys())[:10])}...")
                 return False
             
             # Проверяем тип ставки
@@ -433,14 +385,19 @@ class BettingGame:
                 print(f"⚠️ Неизвестный тип ставки: '{bet_type}'")
                 return False
             
-            print(f"✅ Тип ставки определен: {bet_type}")
+            print(f"✅ Тип ставки определен: {bet_type} ({BET_TYPES[bet_type]['name']})")
             
-            # Сохраняем платеж в файл для обработки в main.py
+            # Сохраняем платеж в файл для обработки
             success = self._save_pending_payment(payment_id, payment_data, bet_type)
             
             if success:
                 print(f"✅ Платёж успешно сохранен и ожидает обработки")
-                print("ℹ️ Main.py обработает платёж когда найдет user_id по username")
+                print(f"📊 Данные платежа:")
+                print(f"   ID: {payment_id}")
+                print(f"   Сумма: {amount} USDT")
+                print(f"   Username: @{username}")
+                print(f"   Ставка: {bet_type}")
+                print(f"   Комментарий: '{comment}'")
             
             return success
             
@@ -490,36 +447,6 @@ class BettingGame:
             print(f"❌ Ошибка сохранения платежа: {e}")
             return False
 
-    # ========== НОВАЯ КОМАНДА ДЛЯ ПРОВЕРКИ ПАРСИНГА ==========
-    
-    def check_parsing(self, message_text):
-        """Проверяет парсинг сообщения (для команды /pars)"""
-        print(f"\n🔍 ТЕСТ ПАРСИНГА СООБЩЕНИЯ:")
-        print(f"📝 Текст сообщения:\n{message_text}")
-        print("-" * 50)
-        
-        result = self.parse_payment_message(message_text)
-        
-        if result:
-            print(f"\n✅ РЕЗУЛЬТАТ ПАРСИНГА:")
-            print(f"ID: {result.get('payment_id')}")
-            print(f"Сумма: {result.get('amount')} {result.get('currency')}")
-            print(f"Username: @{result.get('username')}")
-            print(f"Комментарий: '{result.get('comment')}'")
-            print(f"Источник: {'CryptoBot' if result.get('is_cryptobot') else 'Другой'}")
-            
-            # Пробуем определить тип ставки
-            comment = result.get('comment', '')
-            bet_type = self.parse_bet_from_comment(comment)
-            if bet_type:
-                print(f"Тип ставки: {bet_type}")
-            else:
-                print(f"Тип ставки: ❌ Не определен")
-        else:
-            print(f"❌ Парсинг не удался")
-        
-        return result
-
     def create_game_from_payment(self, user_id, username, amount, bet_type, nickname):
         """Создает игру из платежа"""
         try:
@@ -532,17 +459,21 @@ class BettingGame:
             
             # Получаем конфигурацию ставки
             if bet_type.startswith('куб_'):
-                bet_config = DICE_BET_TYPES[bet_type]
+                bet_config = DICE_BET_TYPES.get(bet_type)
             elif bet_type.startswith('баскет_'):
-                bet_config = BASKETBALL_BET_TYPES[bet_type]
+                bet_config = BASKETBALL_BET_TYPES.get(bet_type)
             elif bet_type.startswith('футбол_'):
-                bet_config = FOOTBALL_BET_TYPES[bet_type]
+                bet_config = FOOTBALL_BET_TYPES.get(bet_type)
             elif bet_type.startswith('дартс_'):
-                bet_config = DART_BET_TYPES[bet_type]
+                bet_config = DART_BET_TYPES.get(bet_type)
             elif bet_type.startswith('боулинг_'):
-                bet_config = BOWLING_BET_TYPES[bet_type]
+                bet_config = BOWLING_BET_TYPES.get(bet_type)
             else:
                 print(f"⚠️ Неизвестный тип ставки: {bet_type}")
+                return False
+            
+            if not bet_config:
+                print(f"⚠️ Конфигурация для ставки {bet_type} не найдена")
                 return False
             
             print(f"✅ Конфигурация ставки: {bet_config['name']} (x{bet_config['multiplier']})")
@@ -576,6 +507,37 @@ class BettingGame:
             import traceback
             traceback.print_exc()
             return False
+
+    # ========== КОМАНДА ДЛЯ ПРОВЕРКИ ПАРСИНГА ==========
+    
+    def check_parsing(self, message_text):
+        """Проверяет парсинг сообщения"""
+        print(f"\n🔍 ТЕСТ ПАРСИНГА СООБЩЕНИЯ:")
+        print(f"📝 Текст сообщения:\n{message_text}")
+        print("-" * 50)
+        
+        result = self.parse_payment_message(message_text)
+        
+        if result:
+            print(f"\n✅ РЕЗУЛЬТАТ ПАРСИНГА:")
+            print(f"ID: {result.get('payment_id')}")
+            print(f"Сумма: {result.get('amount')} {result.get('currency')}")
+            print(f"Username: @{result.get('username')}")
+            print(f"Комментарий: '{result.get('comment')}'")
+            print(f"Источник: {'CryptoBot' if result.get('is_cryptobot') else 'Другой'}")
+            
+            # Пробуем определить тип ставки
+            comment = result.get('comment', '')
+            bet_type = self.parse_bet_from_comment(comment)
+            if bet_type:
+                print(f"Тип ставки: {bet_type} ({BET_TYPES[bet_type]['name']})")
+                return bet_type
+            else:
+                print(f"Тип ставки: ❌ Не определен")
+        else:
+            print(f"❌ Парсинг не удался")
+        
+        return result
 
     # ========== СТАРАЯ ЛОГИКА (оставляем без изменений) ==========
     
