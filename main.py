@@ -151,7 +151,8 @@ def process_pending_payments():
         with open('pending_payments.json', 'r', encoding='utf-8') as f:
             pending_payments = json.load(f)
         
-        print(f"🔍 Найдено {len(pending_payments)} платежей в pending_payments.json")
+        print(f"\n🔍 ПРОВЕРКА PENDING ПЛАТЕЖЕЙ")
+        print(f"Найдено {len(pending_payments)} платежей в pending_payments.json")
         
         new_processed = 0
         updated_payments = []
@@ -171,7 +172,7 @@ def process_pending_payments():
             
             print(f"\n🔍 Обрабатываю сохраненный платеж {payment_id}:")
             print(f"   Username: @{username}")
-            print(f"   Сумма: {amount}")
+            print(f"   Сумма: {amount} USDT")
             print(f"   Комментарий: '{comment}'")
             print(f"   Тип ставки: {bet_type}")
             
@@ -221,7 +222,7 @@ def process_pending_payments():
                 try:
                     bot.send_message(
                         ADMIN_CHAT_ID,
-                        f"🎮 Новая ставка!\n\n"
+                        f"🎮 Новая ставка из платежа!\n\n"
                         f"👤 Пользователь: {nickname} (@{username})\n"
                         f"💰 Сумма: {amount} USDT\n"
                         f"🎯 Ставка: {bet_type}\n"
@@ -470,8 +471,10 @@ def show_games(message):
 def handle_payment_channel(message):
     """Обрабатывает сообщения из канала с платежами"""
     try:
-        print(f"\n📩 Получено сообщение из канала платежей (ID: {message.message_id})")
+        print(f"\n📩 ПОЛУЧЕНО СООБЩЕНИЕ ИЗ КАНАЛА ПЛАТЕЖЕЙ")
+        print(f"📅 Время: {time.strftime('%H:%M:%S')}")
         print(f"📝 Текст сообщения:\n{message.text}")
+        print("-" * 50)
         
         # Пробуем обработать как платеж
         if game.process_payment_from_channel(message):
@@ -566,6 +569,97 @@ def check_channel_access(message):
             
     except Exception as e:
         log_error("CHANNEL_CHECK_ERROR", f"Ошибка команды /channel: {e}", e)
+
+# ========== НОВАЯ КОМАНДА /PARS ==========
+@bot.message_handler(commands=['pars'])
+def test_parsing(message):
+    """Тестирует парсинг сообщения"""
+    try:
+        if message.from_user.id != ADMIN_CHAT_ID:
+            return
+        
+        print(f"🔍 Админ тестирует парсинг")
+        
+        # Проверяем, есть ли текст после команды
+        if len(message.text.split()) > 1:
+            # Если есть текст - парсим его
+            text_to_parse = ' '.join(message.text.split()[1:])
+            
+            print(f"\n📝 Текст для парсинга:\n{text_to_parse}")
+            
+            # Используем функцию check_parsing из games.py
+            result = game.check_parsing(text_to_parse)
+            
+            if result:
+                response = f"""
+✅ <b>Парсинг успешен:</b>
+
+💰 <b>Сумма:</b> {result.get('amount')} {result.get('currency')}
+👤 <b>Username:</b> @{result.get('username')}
+💬 <b>Комментарий:</b> '{result.get('comment')}'
+🆔 <b>ID:</b> {result.get('payment_id')}
+📧 <b>Источник:</b> {'CryptoBot' if result.get('is_cryptobot') else 'Другой'}
+                """
+                
+                # Проверяем тип ставки
+                comment = result.get('comment', '')
+                bet_type = game.parse_bet_from_comment(comment)
+                if bet_type:
+                    response += f"\n🎯 <b>Тип ставки:</b> {bet_type}"
+                else:
+                    response += f"\n🎯 <b>Тип ставки:</b> ❌ Не определен"
+            else:
+                response = "❌ <b>Не удалось распарсить сообщение</b>"
+            
+            bot.reply_to(message, response, parse_mode='HTML')
+        else:
+            # Если нет текста - проверяем последние сообщения из канала
+            bot.reply_to(message, "🔍 Проверяю последние сообщения из канала...")
+            
+            try:
+                # Получаем последние сообщения из канала
+                chat_history = bot.get_chat(PAYMENTS_CHANNEL_ID)
+                
+                # Пробуем получить несколько последних сообщений
+                # (Telegram API ограничивает получение истории)
+                response = "📝 <b>Проверка парсинга последних сообщений:</b>\n\n"
+                
+                # Проверяем pending_payments.json
+                if os.path.exists('pending_payments.json'):
+                    with open('pending_payments.json', 'r', encoding='utf-8') as f:
+                        pending_data = json.load(f)
+                    
+                    if pending_data:
+                        response += f"📁 <b>В pending_payments.json:</b> {len(pending_data)} платежей\n\n"
+                        
+                        # Показываем последние 5 платежей
+                        for i, payment in enumerate(pending_data[-5:], 1):
+                            payment_data = payment.get('payment_data', {})
+                            processed = payment.get('processed', False)
+                            response += f"{i}. "
+                            response += f"✅ " if processed else f"⏳ "
+                            response += f"@{payment_data.get('username', 'нет')}: "
+                            response += f"{payment_data.get('amount', 0)} USDT - "
+                            response += f"'{payment_data.get('comment', '')}'\n"
+                            response += f"   Ставка: {payment.get('bet_type', 'нет')}\n\n"
+                    else:
+                        response += "📁 <b>В pending_payments.json:</b> нет платежей\n\n"
+                else:
+                    response += "📁 <b>pending_payments.json:</b> файл не найден\n\n"
+                
+                # Информация о user mappings
+                response += f"👤 <b>Известных username:</b> {len(username_to_id)}\n"
+                response += f"💰 <b>Обработано платежей:</b> {len(processed_payments)}\n\n"
+                response += "ℹ️ <i>Чтобы протестировать парсинг конкретного сообщения, отправьте:</i>\n"
+                response += "<code>/pars текст_сообщения</code>"
+                
+                bot.reply_to(message, response, parse_mode='HTML')
+                
+            except Exception as e:
+                bot.reply_to(message, f"❌ Ошибка при проверке канала: {str(e)}", parse_mode='HTML')
+        
+    except Exception as e:
+        log_error("PARS_COMMAND_ERROR", f"Ошибка команды /pars: {e}", e)
 
 @bot.message_handler(commands=['add'])
 def admin_add_balance(message):
