@@ -486,6 +486,82 @@ def handle_payment_channel(message):
     except Exception as e:
         log_error("CHANNEL_HANDLER_ERROR", f"Ошибка обработки сообщения из канала: {e}", e)
 
+@bot.message_handler(commands=['channel'])
+def check_channel_access(message):
+    """Проверяет доступ бота к каналу с платежами"""
+    try:
+        if message.from_user.id != ADMIN_CHAT_ID:
+            return
+        
+        print(f"📺 Админ проверяет доступ к каналу")
+        
+        bot.reply_to(message, "🔄 Проверяю доступ к каналу с платежами...")
+        
+        try:
+            # Пробуем получить информацию о канале
+            chat_info = bot.get_chat(PAYMENTS_CHANNEL_ID)
+            channel_info = f"""
+<b>📺 Информация о канале:</b>
+<b>Название:</b> {chat_info.title}
+<b>ID:</b> <code>{chat_info.id}</code>
+<b>Тип:</b> {chat_info.type}
+"""
+            
+            # Проверяем права бота в канале
+            try:
+                # Пробуем получить информацию о участниках (требует админских прав)
+                chat_member = bot.get_chat_member(PAYMENTS_CHANNEL_ID, bot.get_me().id)
+                member_status = chat_member.status
+                
+                if member_status in ['administrator', 'creator']:
+                    channel_info += f"\n<b>Статус бота:</b> ✅ Администратор"
+                elif member_status == 'member':
+                    channel_info += f"\n<b>Статус бота:</b> ⚠️ Участник (нужны права администратора)"
+                else:
+                    channel_info += f"\n<b>Статус бота:</b> ❌ {member_status}"
+                
+                channel_info += f"\n<b>Права:</b>"
+                channel_info += f"\n├ Может отправлять сообщения: {'✅' if chat_member.can_send_messages else '❌'}"
+                channel_info += f"\n├ Может отправлять медиа: {'✅' if chat_member.can_send_media_messages else '❌'}"
+                channel_info += f"\n├ Может отправлять другие сообщения: {'✅' if chat_member.can_send_other_messages else '❌'}"
+                channel_info += f"\n└ Может добавлять веб-превью: {'✅' if chat_member.can_add_web_page_previews else '❌'}"
+                
+            except Exception as e:
+                channel_info += f"\n<b>Статус бота:</b> ❌ Не могу получить информацию: {str(e)}"
+            
+            # Проверяем, получаем ли мы сообщения от канала через вебхук
+            channel_info += f"\n\n<b>🔧 Техническая информация:</b>"
+            channel_info += f"\n<b>ID канала:</b> <code>{PAYMENTS_CHANNEL_ID}</code>"
+            channel_info += f"\n<b>Webhook активен:</b> {'✅' if bot.get_webhook_info().url else '❌'}"
+            
+            # Проверяем есть ли последние сообщения в pending_payments.json
+            if os.path.exists('pending_payments.json'):
+                with open('pending_payments.json', 'r', encoding='utf-8') as f:
+                    pending_data = json.load(f)
+                    pending_count = len(pending_data)
+                    channel_info += f"\n<b>Сообщений в очереди:</b> {pending_count}"
+            else:
+                channel_info += f"\n<b>Сообщений в очереди:</b> файл не найден"
+            
+            # Проверяем пример сообщения
+            channel_info += f"\n\n<b>📝 Как добавить бота в канал:</b>"
+            channel_info += f"\n1. Откройте канал"
+            channel_info += f"\n2. Нажмите на название канала"
+            channel_info += f"\n3. Выберите 'Администраторы'"
+            channel_info += f"\n4. Добавьте @{bot.get_me().username}"
+            channel_info += f"\n5. Дайте права: 'Изменять сообщения', 'Отправлять сообщения'"
+            
+            bot.reply_to(message, channel_info, parse_mode='HTML')
+            print(f"✅ Проверка канала завершена")
+            
+        except Exception as e:
+            error_msg = f"❌ Ошибка доступа к каналу:\n{str(e)}"
+            bot.reply_to(message, error_msg)
+            print(f"❌ Ошибка проверки канала: {e}")
+            
+    except Exception as e:
+        log_error("CHANNEL_CHECK_ERROR", f"Ошибка команды /channel: {e}", e)
+
 @bot.message_handler(commands=['add'])
 def admin_add_balance(message):
     try:
