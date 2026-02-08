@@ -515,19 +515,23 @@ def check_channel_access(message):
                 
                 if member_status in ['administrator', 'creator']:
                     channel_info += f"\n<b>Статус бота:</b> ✅ Администратор"
+                    # Исправленная часть - используем правильные атрибуты
+                    if hasattr(chat_member, 'can_post_messages'):
+                        channel_info += f"\n<b>Может отправлять сообщения:</b> {'✅' if chat_member.can_post_messages else '❌'}"
+                    elif hasattr(chat_member, 'can_send_messages'):
+                        channel_info += f"\n<b>Может отправлять сообщения:</b> {'✅' if chat_member.can_send_messages else '❌'}"
+                    else:
+                        channel_info += f"\n<b>Может отправлять сообщения:</b> ❓ (атрибут не найден)"
                 elif member_status == 'member':
                     channel_info += f"\n<b>Статус бота:</b> ⚠️ Участник (нужны права администратора)"
+                    channel_info += f"\n<b>Может отправлять сообщения:</b> ❌"
                 else:
                     channel_info += f"\n<b>Статус бота:</b> ❌ {member_status}"
-                
-                channel_info += f"\n<b>Права:</b>"
-                channel_info += f"\n├ Может отправлять сообщения: {'✅' if chat_member.can_send_messages else '❌'}"
-                channel_info += f"\n├ Может отправлять медиа: {'✅' if chat_member.can_send_media_messages else '❌'}"
-                channel_info += f"\n├ Может отправлять другие сообщения: {'✅' if chat_member.can_send_other_messages else '❌'}"
-                channel_info += f"\n└ Может добавлять веб-превью: {'✅' if chat_member.can_add_web_page_previews else '❌'}"
+                    channel_info += f"\n<b>Может отправлять сообщения:</b> ❌"
                 
             except Exception as e:
                 channel_info += f"\n<b>Статус бота:</b> ❌ Не могу получить информацию: {str(e)}"
+                channel_info += f"\n<b>Может отправлять сообщения:</b> ❓ (ошибка получения информации)"
             
             # Проверяем, получаем ли мы сообщения от канала через вебхук
             channel_info += f"\n\n<b>🔧 Техническая информация:</b>"
@@ -539,7 +543,8 @@ def check_channel_access(message):
                 with open('pending_payments.json', 'r', encoding='utf-8') as f:
                     pending_data = json.load(f)
                     pending_count = len(pending_data)
-                    channel_info += f"\n<b>Сообщений в очереди:</b> {pending_count}"
+                    unprocessed_count = len([p for p in pending_data if not p.get('processed', False)])
+                    channel_info += f"\n<b>Сообщений в очереди:</b> {pending_count} ({unprocessed_count} необработанных)"
             else:
                 channel_info += f"\n<b>Сообщений в очереди:</b> файл не найден"
             
@@ -549,7 +554,7 @@ def check_channel_access(message):
             channel_info += f"\n2. Нажмите на название канала"
             channel_info += f"\n3. Выберите 'Администраторы'"
             channel_info += f"\n4. Добавьте @{bot.get_me().username}"
-            channel_info += f"\n5. Дайте права: 'Изменять сообщения', 'Отправлять сообщения'"
+            channel_info += f"\n5. Дайте права: 'Отправлять сообщения' (ОБЯЗАТЕЛЬНО!)"
             
             bot.reply_to(message, channel_info, parse_mode='HTML')
             print(f"✅ Проверка канала завершена")
@@ -827,7 +832,8 @@ def run_flask():
     except Exception as e:
         log_error("FLASK_ERROR", f"Ошибка запуска Flask: {e}", e)
 
-if __name__ == "__main__":
+def main():
+    """Главная функция для запуска бота"""
     print("=" * 60)
     print("🤖 БОТ ЗАПУЩЕН")
     print("=" * 60)
@@ -844,7 +850,31 @@ if __name__ == "__main__":
         print(f"✅ Бот подключен: @{bot_info.username} ({bot_info.first_name})")
     except Exception as e:
         print(f"❌ Ошибка подключения к Telegram: {e}")
+        return
     
-    print("\n🚀 Запуск Flask сервера...")
-    # Запускаем Flask сервер (он будет работать в основном потоке)
-    run_flask()
+    # Настраиваем вебхук
+    print("\n🔧 Настройка Telegram webhook...")
+    if not setup_telegram_webhook():
+        print("❌ Не удалось настроить вебхук")
+        return
+    
+    # Запускаем Flask в отдельном потоке
+    print("\n🚀 Запуск Flask сервера в отдельном потоке...")
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # Даем время Flask запуститься
+    time.sleep(3)
+    
+    print("\n✅ Бот успешно запущен и готов к работе!")
+    print("📡 Ожидание сообщений через вебхук...")
+    
+    # Бесконечный цикл для поддержания работы
+    try:
+        while True:
+            time.sleep(3600)  # Спим по 1 часу
+    except KeyboardInterrupt:
+        print("\n🛑 Бот остановлен")
+
+if __name__ == "__main__":
+    main()
