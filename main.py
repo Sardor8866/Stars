@@ -26,7 +26,7 @@ ADMIN_CHAT_ID = 8118184388
 SERVER_URL = os.environ.get('SERVER_URL', 'https://stars-prok.onrender.com')
 
 # Ссылка на многоразовый счет (создан вручную через @CryptoBot)
-MULTI_USE_INVOICE_LINK = "https://t.me/CryptoBot?start=invoice-XXXXXXXXXX"  # ЗАМЕНИ НА СВОЮ!
+MULTI_USE_INVOICE_LINK = "https://t.me/send?start=IVNg7XnKzxBs"  # ЗАМЕНИ НА СВОЮ!
 
 # Инициализация модулей
 game = BettingGame(bot)
