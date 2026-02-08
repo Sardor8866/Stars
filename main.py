@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify
 from waitress import serve
 
 # Импортируем модули
-from games import BettingGame, BET_TYPES, MIN_BET, CHANNEL_LINK
+from games import BettingGame, BET_TYPES, MIN_BET, CHANNEL_LINK, PAYMENTS_CHANNEL_ID
 from referrals import ReferralSystem
 
 # Инициализация бота
@@ -49,7 +49,7 @@ def save_user_info(user_id, username, first_name):
     referral_system.save_user_info(user_id, username, first_name)
 
     if username:
-        username_to_id[username] = user_id
+        username_to_id[username.lower()] = user_id  # Сохраняем в нижнем регистре
 
     try:
         try:
@@ -80,7 +80,7 @@ def load_user_mappings():
         for user_id_str, user_data in user_mappings.items():
             username = user_data.get('username', '')
             if username:
-                username_to_id[username] = int(user_id_str)
+                username_to_id[username.lower()] = int(user_id_str)  # В нижнем регистре
 
         print(f"✅ Загружено {len(username_to_id)} маппингов пользователей")
     except:
@@ -95,7 +95,7 @@ def load_processed_payments():
             processed_payments = set(data)
         print(f"✅ Загружено {len(processed_payments)} обработанных платежей")
     except:
-        print("ℹ️ Файл processed_payments.json не найден, создадим новый")
+        print("ℹ️ Файл processed_payments.json не найден, созданем новый")
 
 def save_processed_payment(payment_id):
     """Сохраняет ID обработанного платежа"""
@@ -106,270 +106,90 @@ def save_processed_payment(payment_id):
     except Exception as e:
         print(f"⚠️ Ошибка сохранения processed_payments: {e}")
 
-def parse_payment_comment(comment):
-    """Парсит комментарий к платежу - ТОЛЬКО ТИП СТАВКИ"""
-    if not comment:
-        return None, None, None
-    
-    comment = comment.strip().lower()
-    comment = re.sub(r'@\w+', '', comment).strip()
-    
-    parts = re.split(r'\s+', comment)
-    
-    for part in parts:
-        if part in BET_TYPES:
-            return None, part, None
-        
-        if '-' in part:
-            variant = part.replace('-', '_')
-            if variant in BET_TYPES:
-                return None, variant, None
-        
-        if '_' in part:
-            variant = part.replace('_', '-')
-            if variant in BET_TYPES:
-                return None, variant, None
-    
-    if len(parts) >= 2:
-        combined = f"{parts[0]}_{parts[1]}"
-        if combined in BET_TYPES:
-            return None, combined, None
-        
-        combined2 = f"{parts[0]}-{parts[1]}".replace('-', '_')
-        if combined2 in BET_TYPES:
-            return None, combined2, None
-    
-    return None, None, None
-
-def extract_username_from_comment(comment):
-    """Извлекает username из комментария"""
-    if not comment:
-        return None
-    
-    username_match = re.search(r'@(\w+)', comment)
-    if username_match:
-        return username_match.group(1).lower()
-    
-    return None
-
-def process_invoice_payment(invoice):
-    """Обрабатывает оплаченный инвойс"""
+def process_pending_payments():
+    """Обрабатывает сохраненные платежи из файла"""
     try:
-        payment_id = str(invoice.get('invoice_id'))
+        if not os.path.exists('pending_payments.json'):
+            return 0
         
-        if payment_id in processed_payments:
-            return
+        with open('pending_payments.json', 'r', encoding='utf-8') as f:
+            pending_payments = json.load(f)
         
-        # Получаем данные платежа
-        amount = float(invoice.get('amount', 0))
-        asset = invoice.get('asset', 'USDT')
-        comment = invoice.get('comment', '').strip()
-        paid_at = invoice.get('paid_at')
+        new_processed = 0
+        updated_payments = []
         
-        print(f"\n🔍 Новый платёж {payment_id}:")
-        print(f"   Сумма: {amount} {asset}")
-        print(f"   Комментарий: '{comment}'")
-        print(f"   Время: {paid_at}")
-        
-        # Проверяем минимальную сумму
-        if amount < MIN_BET:
-            print(f"⚠️ Игнорируем малый платёж: {amount} USDT (мин: {MIN_BET})")
-            save_processed_payment(payment_id)
-            return
-        
-        # Извлекаем username из комментария
-        username = extract_username_from_comment(comment)
-        if not username:
-            print(f"⚠️ Не найден username в комментарии: '{comment}'")
-            save_processed_payment(payment_id)
-            return
-        
-        # Парсим тип ставки
-        _, bet_type, _ = parse_payment_comment(comment)
-        
-        if not bet_type:
-            print(f"⚠️ Не удалось определить тип ставки из комментария: '{comment}'")
+        for payment in pending_payments:
+            if payment.get('processed', False):
+                updated_payments.append(payment)
+                continue
             
-            if username in username_to_id:
-                user_id = username_to_id[username]
-                try:
-                    bot.send_message(
-                        user_id,
-                        f"❌ <b>Ошибка в комментарии к платежу!</b>\n\n"
-                        f"Не удалось определить тип ставки из: <code>{comment}</code>\n\n"
-                        f"<b>Правильный формат комментария:</b>\n"
-                        f"<code>тип_ставки @ваш_username</code>\n\n"
-                        f"<b>Примеры:</b>\n"
-                        f"• <code>куб_чет @{username}</code>\n"
-                        f"• <code>баскет_гол @{username}</code>\n"
-                        f"• <code>футбол_мимо @{username}</code>\n\n"
-                        f"<b>Ваш username:</b> @{username}",
-                        parse_mode='HTML'
-                    )
-                except:
-                    pass
+            payment_id = payment.get('payment_id')
+            payment_data = payment.get('payment_data', {})
+            bet_type = payment.get('bet_type')
             
-            save_processed_payment(payment_id)
-            return
-        
-        # Проверяем тип ставки
-        if bet_type not in BET_TYPES:
-            print(f"⚠️ Неизвестный тип ставки: '{bet_type}'")
-            save_processed_payment(payment_id)
-            return
-        
-        bet_config = BET_TYPES[bet_type]
-        
-        # Ищем user_id по username
-        user_id = None
-        if username in username_to_id:
-            user_id = username_to_id[username]
-        else:
-            print(f"⚠️ Username '@{username}' не найден в базе")
-            save_processed_payment(payment_id)
-            return
-        
-        # Получаем информацию о пользователе
-        nickname = f"Игрок_{user_id}"
-        try:
-            user_info = bot.get_chat(user_id)
-            nickname = user_info.first_name or nickname
-            if user_info.last_name:
-                nickname += f" {user_info.last_name}"
+            username = payment_data.get('username')
+            amount = payment_data.get('amount', 0)
+            comment = payment_data.get('comment', '')
             
-            save_user_info(
-                user_id,
-                user_info.username,
-                user_info.first_name
-            )
+            print(f"\n🔍 Обрабатываю сохраненный платеж {payment_id}:")
+            print(f"   Username: @{username}")
+            print(f"   Сумма: {amount}")
+            print(f"   Комментарий: '{comment}'")
+            print(f"   Тип ставки: {bet_type}")
             
-            print(f"✅ Пользователь найден: {nickname} (@{user_info.username})")
-        except Exception as e:
-            print(f"⚠️ Не удалось получить информацию о пользователе {user_id}: {e}")
-        
-        # Создаём игру
-        game_data = {
-            'user_id': user_id,
-            'nickname': nickname,
-            'amount': amount,
-            'bet_type': bet_type,
-            'bet_config': bet_config,
-            'from_bot': True
-        }
-        
-        game.game_queue.add_game(game_data)
-        
-        # Отправляем уведомление пользователю
-        try:
-            queue_size = game.game_queue.get_queue_size() - 1
-            queue_msg = f"\n⏳ Ваша игра в очереди. Перед вами {queue_size} игр(ы)" if queue_size > 0 else ""
+            # Проверяем минимальную сумму
+            if amount < MIN_BET:
+                print(f"⚠️ Игнорируем малый платёж: {amount} USDT (мин: {MIN_BET})")
+                payment['processed'] = True
+                updated_payments.append(payment)
+                continue
             
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🔗 Смотреть в канале", url=CHANNEL_LINK))
+            # Ищем user_id по username
+            user_id = None
+            if username and username.lower() in username_to_id:
+                user_id = username_to_id[username.lower()]
+                print(f"✅ Найден user_id: {user_id} для @{username}")
             
-            bot.send_message(
-                user_id,
-                f"✅ <b>Ставка принята!</b>\n\n"
-                f"💰 <b>Сумма:</b> {amount:.2f} USDT\n"
-                f"🎯 <b>Ставка:</b> {bet_config['name']}\n"
-                f"📈 <b>Коэффициент:</b> x{bet_config['multiplier']}\n"
-                f"💎 <b>Возможный выигрыш:</b> {amount * bet_config['multiplier']:.2f} USDT{queue_msg}\n\n"
-                f"Следите за игрой в <a href='{CHANNEL_LINK}'>нашем канале</a>",
-                parse_mode='HTML',
-                reply_markup=markup
-            )
-            print(f"✅ Ставка создана для {user_id} ({nickname}): {amount} USDT на {bet_type}")
-        except Exception as e:
-            print(f"⚠️ Не удалось отправить уведомление пользователю {user_id}: {e}")
-        
-        save_processed_payment(payment_id)
-        
-        # Сохраняем в лог
-        try:
-            with open('payment_log.json', 'a', encoding='utf-8') as f:
-                log_entry = {
-                    'payment_id': payment_id,
-                    'user_id': user_id,
-                    'username': username,
-                    'amount': amount,
-                    'bet_type': bet_type,
-                    'nickname': nickname,
-                    'comment': comment,
-                    'timestamp': time.time(),
-                    'date': time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'source': 'api_check'
-                }
-                f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
-        except:
-            pass
-        
-    except Exception as e:
-        print(f"❌ Ошибка обработки платежа: {e}")
-        import traceback
-        traceback.print_exc()
-
-def check_new_payments():
-    """
-    Проверяет новые платежи через CryptoBot API
-    Вызывается периодически в фоновом потоке
-    """
-    try:
-        headers = {'Crypto-Pay-API-Token': CRYPTOBOT_TOKEN}
-        
-        # Получаем последние оплаченные инвойсы
-        response = requests.get(
-            f'{CRYPTO_API_URL}/getInvoices',
-            headers=headers,
-            params={
-                'asset': 'USDT',
-                'status': 'paid',  # Только оплаченные
-                'count': 100  # Последние 100
-            },
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
+            if not user_id:
+                print(f"⚠️ Не найден user_id для @{username}")
+                updated_payments.append(payment)
+                continue
             
-            if data.get('ok'):
-                invoices = data['result'].get('items', [])
-                
-                new_payments = 0
-                for invoice in invoices:
-                    invoice_id = str(invoice.get('invoice_id'))
-                    
-                    # Пропускаем уже обработанные
-                    if invoice_id in processed_payments:
-                        continue
-                    
-                    # Обрабатываем новый платеж
-                    process_invoice_payment(invoice)
-                    new_payments += 1
-                
-                if new_payments > 0:
-                    print(f"✅ Обработано новых платежей: {new_payments}")
+            # Получаем никнейм пользователя
+            nickname = f"Игрок_{user_id}"
+            try:
+                user_info = bot.get_chat(user_id)
+                nickname = user_info.first_name or nickname
+                if user_info.last_name:
+                    nickname += f" {user_info.last_name}"
+                print(f"✅ Никнейм: {nickname}")
+            except Exception as e:
+                print(f"⚠️ Не удалось получить информацию о пользователе: {e}")
+            
+            # Создаем игру
+            print(f"🎮 Создаю игру для {nickname}...")
+            if game.create_game_from_payment(user_id, username, amount, bet_type, nickname):
+                payment['processed'] = True
+                new_processed += 1
+                save_processed_payment(payment_id)
+                print(f"✅ Успешно создана игра для платежа {payment_id}")
             else:
-                print(f"⚠️ Ошибка CryptoBot API: {data.get('error')}")
-        else:
-            print(f"❌ HTTP ошибка при проверке платежей: {response.status_code}")
-    
+                print(f"❌ Ошибка создания игры для платежа {payment_id}")
+            
+            updated_payments.append(payment)
+        
+        # Сохраняем обновленный список
+        with open('pending_payments.json', 'w', encoding='utf-8') as f:
+            json.dump(updated_payments, f, indent=4, ensure_ascii=False)
+        
+        if new_processed > 0:
+            print(f"\n✅ Обработано {new_processed} новых платежей из pending_payments.json")
+        
+        return new_processed
+        
     except Exception as e:
-        print(f"❌ Ошибка проверки платежей: {e}")
-
-def payment_checker_loop():
-    """
-    Бесконечный цикл проверки платежей
-    Запускается в отдельном потоке
-    """
-    print("🔄 Запущен мониторинг платежей (каждые 15 сек)")
-    
-    while True:
-        try:
-            check_new_payments()
-            time.sleep(15)  # Проверяем каждые 15 секунд
-        except Exception as e:
-            print(f"❌ Ошибка в цикле проверки платежей: {e}")
-            time.sleep(30)  # При ошибке ждем дольше
+        print(f"❌ Ошибка обработки pending_payments: {e}")
+        return 0
 
 # Flask роуты
 @app.route('/')
@@ -409,9 +229,10 @@ def telegram_webhook():
 def manual_check():
     """Ручная проверка платежей (для тестирования)"""
     try:
-        check_new_payments()
+        result = process_pending_payments()
         return jsonify({
             "status": "ok",
+            "processed_new": result,
             "processed_total": len(processed_payments)
         }), 200
     except Exception as e:
@@ -420,6 +241,12 @@ def manual_check():
 # Загружаем сохраненные данные при запуске
 load_user_mappings()
 load_processed_payments()
+
+# Обрабатываем накопленные платежи при запуске
+print("\n🔍 Проверяю накопленные платежи...")
+initial_processed = process_pending_payments()
+if initial_processed > 0:
+    print(f"✅ При запуске обработано {initial_processed} платежей")
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
@@ -474,11 +301,11 @@ def show_profile(message):
 1. Нажмите кнопку "💳 Сделать ставку" ниже
 2. В открывшемся окне CryptoBot:
    • Введите сумму (минимум {MIN_BET} USDT)
-   • В комментарии укажите:
+   • В комментарии укажите ТИП СТАВКИ и свой username:
      <code>тип_ставки @ваш_username</code>
 
 3. Оплатите счёт
-4. Бот проверит платёж через 15-30 секунд!
+4. Игра автоматически появится в канале!
 
 <b>📝 Примеры комментариев:</b>
 • <code>куб_чет @{message.from_user.username}</code>
@@ -525,6 +352,25 @@ def show_games(message):
     )
     game.show_games_menu(message)
 
+# Обработчик сообщений из канала с платежами
+@bot.message_handler(func=lambda message: message.chat.id == PAYMENTS_CHANNEL_ID)
+def handle_payment_channel(message):
+    """Обрабатывает сообщения из канала с платежами"""
+    try:
+        print(f"\n📩 Получено сообщение из канала платежей (ID: {message.message_id})")
+        
+        # Пробуем обработать как платеж
+        if game.process_payment_from_channel(message):
+            print(f"✅ Сообщение {message.message_id} распознано как платеж")
+            
+            # Немедленно обрабатываем накопленные платежи
+            process_pending_payments()
+        else:
+            print(f"⚠️ Сообщение {message.message_id} не распознано как платеж")
+            
+    except Exception as e:
+        print(f"❌ Ошибка обработки сообщения из канала: {e}")
+
 @bot.message_handler(commands=['add'])
 def admin_add_balance(message):
     if message.from_user.id != ADMIN_CHAT_ID:
@@ -560,8 +406,8 @@ def admin_check_payments(message):
         return
     
     bot.reply_to(message, "🔄 Проверяю платежи...")
-    check_new_payments()
-    bot.reply_to(message, f"✅ Проверка завершена!\nОбработано всего: {len(processed_payments)} платежей")
+    processed = process_pending_payments()
+    bot.reply_to(message, f"✅ Проверка завершена!\nОбработано новых: {processed} платежей\nВсего: {len(processed_payments)} платежей")
 
 @bot.message_handler(commands=['stats'])
 def admin_stats(message):
@@ -572,12 +418,23 @@ def admin_stats(message):
     total_balance = sum(game.user_balances.values())
     ref_stats = referral_system.get_stats(ADMIN_CHAT_ID)
 
+    # Получаем количество pending платежей
+    pending_count = 0
+    try:
+        if os.path.exists('pending_payments.json'):
+            with open('pending_payments.json', 'r', encoding='utf-8') as f:
+                pending_payments = json.load(f)
+                pending_count = len([p for p in pending_payments if not p.get('processed', False)])
+    except:
+        pass
+
     stats_text = f"""
 <b>📊 Статистика бота</b>
 👥 Всего пользователей: <b>{total_users}</b>
 💰 Общий баланс: <b>{total_balance:.2f} USDT</b>
 📝 Известных username: <b>{len(username_to_id)}</b>
 💳 Обработано платежей: <b>{len(processed_payments)}</b>
+⏳ Ожидающих обработки: <b>{pending_count}</b>
 
 <b>👥 Реферальная система:</b>
 ├ Приглашено: <b>{ref_stats['total_refs']} чел.</b>
@@ -660,7 +517,7 @@ def callback_handler(call):
     elif call.data == "game_bowling":
         game.show_bowling_menu(call)
     elif call.data.startswith("bet_bowling_"):
-        bet_type = call.data.replace("bet_bowling_", "")
+        bet_type = call_data.replace("bet_bowling_", "")
         if bet_type in BET_TYPES:
             game.request_amount(call, bet_type)
 
@@ -704,6 +561,7 @@ if __name__ == "__main__":
     print(f"💰 Минимальная ставка: {MIN_BET} USDT")
     print(f"🌐 Server URL: {SERVER_URL}")
     print(f"🔗 Многоразовый счет: {MULTI_USE_INVOICE_LINK}")
+    print(f"📺 Канал с платежами: {PAYMENTS_CHANNEL_ID}")
     
     # Загружаем данные
     load_user_mappings()
@@ -716,19 +574,6 @@ if __name__ == "__main__":
     else:
         print("⚠️ Не удалось настроить Telegram webhook")
     
-    # Проверяем CryptoBot API
-    print("\n💳 Проверка CryptoBot API...")
-    try:
-        headers = {'Crypto-Pay-API-Token': CRYPTOBOT_TOKEN}
-        response = requests.get(f'{CRYPTO_API_URL}/getMe', headers=headers, timeout=5)
-        if response.status_code == 200 and response.json().get('ok'):
-            app_info = response.json()['result']
-            print(f"✅ CryptoBot API подключен: {app_info.get('name', 'N/A')}")
-        else:
-            print("⚠️ Проблема с CryptoBot API токеном!")
-    except Exception as e:
-        print(f"❌ Не удалось проверить CryptoBot API: {e}")
-    
     print("\n" + "=" * 60)
     print("💡 ИНСТРУКЦИЯ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ:")
     print("=" * 60)
@@ -737,13 +582,8 @@ if __name__ == "__main__":
     print("3. В комментарии: 'тип_ставки @username'")
     print("4. Пример: 'куб_чет @myusername'")
     print("5. Оплатить счёт")
-    print("6. Бот проверит платёж через 15-30 сек!")
+    print("6. Игра автоматически появится в канале!")
     print("=" * 60)
-    
-    # Запускаем поток проверки платежей
-    payment_thread = threading.Thread(target=payment_checker_loop, daemon=True)
-    payment_thread.start()
-    print("\n✅ Поток проверки платежей запущен!")
     
     print("\n🚀 Запуск Flask сервера...")
     # Запускаем Flask сервер (он будет работать в основном потоке)
