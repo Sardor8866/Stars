@@ -619,6 +619,8 @@ def callback_handler(call):
 
     if call.data == "menu":
         send_welcome(call.message)
+    
+    # Реферальные callback-ы
     elif call.data in ["ref_menu", "ref_list", "ref_withdraw", "ref_share"]:
         if call.data == "ref_menu":
             referral_system.show_menu(call)
@@ -628,18 +630,48 @@ def callback_handler(call):
             referral_system.show_withdraw(call)
         elif call.data == "ref_share":
             referral_system.show_share(call)
-    else:
-        # Игровые callback-ы
-        if call.data == "game_dice":
-            game.show_dice_menu(call)
-        elif call.data == "bet_dice_exact":
-            game.show_exact_numbers(call)
-        elif call.data.startswith("bet_"):
-            parts = call.data.split("_", 2)
-            if len(parts) >= 3:
-                bet_type = "_".join(parts[1:])
-                if bet_type in BET_TYPES:
-                    game.request_amount(call, bet_type)
+    
+    # Игровые callback-ы - КУБИК
+    elif call.data == "game_dice":
+        game.show_dice_menu(call)
+    elif call.data == "bet_dice_exact":
+        game.show_exact_numbers(call)
+    elif call.data.startswith("bet_dice_"):
+        bet_type = call.data.replace("bet_dice_", "")
+        if bet_type in BET_TYPES:
+            game.request_amount(call, bet_type)
+    
+    # БАСКЕТБОЛ
+    elif call.data == "game_basketball":
+        game.show_basketball_menu(call)
+    elif call.data.startswith("bet_basketball_"):
+        bet_type = call.data.replace("bet_basketball_", "")
+        if bet_type in BET_TYPES:
+            game.request_amount(call, bet_type)
+    
+    # ФУТБОЛ
+    elif call.data == "game_football":
+        game.show_football_menu(call)
+    elif call.data.startswith("bet_football_"):
+        bet_type = call.data.replace("bet_football_", "")
+        if bet_type in BET_TYPES:
+            game.request_amount(call, bet_type)
+    
+    # ДАРТС
+    elif call.data == "game_darts":
+        game.show_darts_menu(call)
+    elif call.data.startswith("bet_darts_"):
+        bet_type = call.data.replace("bet_darts_", "")
+        if bet_type in BET_TYPES:
+            game.request_amount(call, bet_type)
+    
+    # БОУЛИНГ
+    elif call.data == "game_bowling":
+        game.show_bowling_menu(call)
+    elif call.data.startswith("bet_bowling_"):
+        bet_type = call.data.replace("bet_bowling_", "")
+        if bet_type in BET_TYPES:
+            game.request_amount(call, bet_type)
 
 def setup_telegram_webhook():
     """Настраивает Telegram webhook"""
