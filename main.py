@@ -745,6 +745,8 @@ def run_flask():
     print(f"🚀 Запуск Flask сервера на порту {port}")
     serve(app, host='0.0.0.0', port=port)
 
+# ... весь ваш код остается без изменений до самого конца ...
+
 if __name__ == "__main__":
     print("=" * 50)
     print("🤖 БОТ ЗАПУЩЕН С ВЕБХУКАМИ")
@@ -770,15 +772,6 @@ if __name__ == "__main__":
     print("6. CryptoBot отправит вебхук → бот создаст ставку!")
     print("=" * 50)
     
-    # Запускаем Flask в отдельном потоке
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    print("🌐 Flask сервер запущен в отдельном потоке")
-    
-    # Запускаем Telegram бота
-    try:
-        bot.polling(none_stop=True, interval=0)
-    except Exception as e:
-        print(f"❌ Критическая ошибка бота: {e}")
-        import traceback
-        traceback.print_exc()
+    # Запускаем Flask сервер
+    run_flask()
+    # bot.polling() УДАЛЕНО - не нужно при использовании Flask
