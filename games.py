@@ -4,11 +4,15 @@ import json
 import os
 import time
 import threading
+import re
 from collections import deque
 
 MIN_BET = 0.15
 CHANNEL_ID = "@l1ght_win"
 CHANNEL_LINK = "https://t.me/l1ght_win"
+
+# ID канала с платежами (где CryptoBot отправляет уведомления)
+PAYMENTS_CHANNEL_ID = -1003747867149  # ID канала https://t.me/+awbI011-RFIwYmIy
 
 # Твоя постоянная ссылка на многоразовый счёт
 PAYMENT_LINK = "https://t.me/send?start=IVNg7XnKzxBs"
@@ -94,7 +98,11 @@ class BettingGame:
         self.game_queue = GameQueue()
         self.referral_system = None  # Будет установлено из main.py
         self.load_balances()
+        
+        # Запускаем обработчик очереди игр
         threading.Thread(target=self._process_game_queue, daemon=True).start()
+        
+        print("✅ Игровая система инициализирована")
 
     def load_balances(self):
         if os.path.exists('balances.json'):
@@ -138,6 +146,297 @@ class BettingGame:
             return True
         return False
 
+    # ========== НОВАЯ ФУНКЦИОНАЛЬНОСТЬ: Обработка платежей из канала ==========
+    
+    def parse_payment_message(self, message_text):
+        """
+        Парсит сообщение от CryptoBot в новом формате.
+        Пример сообщения:
+        '''
+        платежь
+        отправил(а) T 0.150108 USDT ($0.14).
+        привет
+        '''
+        """
+        print(f"\n🔍 Парсим сообщение из канала (новый формат)")
+        
+        payment_data = {
+            'amount': 0,
+            'username': None,
+            'comment': '',
+            'full_name': '',
+            'payment_id': None,
+            'currency': 'USDT',
+            'is_cryptobot': False
+        }
+        
+        try:
+            lines = message_text.strip().split('\n')
+            
+            # Проверяем формат CryptoBot
+            if len(lines) >= 2 and ('отправил(а) T' in lines[1] or 'отправил(а)' in lines[1]):
+                payment_data['is_cryptobot'] = True
+                
+                # Парсим сумму из второй строки
+                amount_line = lines[1]
+                # Ищем паттерн: T 0.150108 USDT
+                amount_match = re.search(r'T\s+([\d.]+)\s+USDT', amount_line)
+                if amount_match:
+                    payment_data['amount'] = float(amount_match.group(1))
+                    payment_data['currency'] = 'USDT'
+                
+                # Ищем username в остальных строках
+                for line in lines[2:]:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Проверяем, есть ли username в строке (@username)
+                    username_match = re.search(r'@(\w+)', line)
+                    if username_match:
+                        payment_data['username'] = username_match.group(1).lower()
+                        # Удаляем username из комментария
+                        line = re.sub(r'@\w+', '', line).strip()
+                    
+                    # Остальное считается комментарием
+                    if line:
+                        payment_data['comment'] = line
+                
+                # Генерируем payment_id на основе времени и суммы
+                payment_data['payment_id'] = f"cryptobot_{int(time.time())}_{payment_data['amount']}"
+                
+                print(f"✅ Парсинг успешен (CryptoBot формат):")
+                print(f"   ID: {payment_data['payment_id']}")
+                print(f"   Сумма: {payment_data['amount']} {payment_data['currency']}")
+                print(f"   Username: @{payment_data['username']}")
+                print(f"   Комментарий: '{payment_data['comment']}'")
+                return payment_data
+            
+            # Если это не формат CryptoBot, проверяем старый формат
+            # Ищем ID платежа (Invoice #)
+            invoice_match = re.search(r'Invoice #(\d+)', message_text)
+            if invoice_match:
+                payment_data['payment_id'] = invoice_match.group(1)
+            
+            # Ищем сумму
+            amount_match = re.search(r'Amount:\s*([\d.]+)\s*(\w+)', message_text)
+            if amount_match:
+                payment_data['amount'] = float(amount_match.group(1))
+                payment_data['currency'] = amount_match.group(2)
+            
+            # Ищем username
+            username_match = re.search(r'From:\s*@(\w+)', message_text)
+            if username_match:
+                payment_data['username'] = username_match.group(1).lower()
+            
+            # Ищем комментарий
+            comment_match = re.search(r'Comment:\s*(.+?)(?:\n|$)', message_text)
+            if comment_match:
+                payment_data['comment'] = comment_match.group(1).strip()
+            
+            # Если нашли данные
+            if payment_data['payment_id'] or payment_data['amount'] > 0:
+                print(f"✅ Парсинг успешен (старый формат):")
+                print(f"   ID: {payment_data['payment_id']}")
+                print(f"   Сумма: {payment_data['amount']} {payment_data['currency']}")
+                print(f"   Username: @{payment_data['username']}")
+                print(f"   Комментарий: '{payment_data['comment']}'")
+                return payment_data
+            
+            print("⚠️ Неизвестный формат сообщения")
+            return None
+            
+        except Exception as e:
+            print(f"❌ Ошибка парсинга сообщения: {e}")
+            return None
+
+    def parse_bet_from_comment(self, comment):
+        """Определяет тип ставки из комментария"""
+        if not comment:
+            return None
+        
+        comment = comment.strip().lower()
+        print(f"🔍 Анализируем комментарий: '{comment}'")
+        
+        # Удаляем лишние символы и пробелы
+        comment = re.sub(r'[^\w\s\-_]', '', comment)
+        comment = re.sub(r'\s+', ' ', comment).strip()
+        
+        # Проверяем точное совпадение
+        if comment in BET_TYPES:
+            return comment
+        
+        # Проверяем варианты с дефисами/подчеркиваниями
+        variations = [
+            comment,
+            comment.replace('-', '_'),
+            comment.replace('_', '-'),
+            comment.replace(' ', '_'),
+            comment.replace(' ', '-')
+        ]
+        
+        for variant in variations:
+            if variant in BET_TYPES:
+                return variant
+        
+        # Пробуем разбить на части
+        parts = comment.split()
+        if len(parts) >= 2:
+            # Пробуем комбинации
+            for i in range(len(parts)):
+                for j in range(i+1, min(len(parts)+1, i+3)):
+                    combined = '_'.join(parts[i:j])
+                    if combined in BET_TYPES:
+                        return combined
+                    
+                    combined_dash = '-'.join(parts[i:j])
+                    if combined_dash in BET_TYPES:
+                        return combined_dash
+        
+        # Попробуем найти похожие
+        for bet_type in BET_TYPES.keys():
+            if bet_type in comment or comment in bet_type:
+                print(f"📌 Найдено похожее: {bet_type} в '{comment}'")
+                return bet_type
+        
+        return None
+
+    def process_payment_from_channel(self, message):
+        """Обрабатывает платеж из канала и создает ставку"""
+        try:
+            # Проверяем, что сообщение из правильного канала
+            if message.chat.id != PAYMENTS_CHANNEL_ID:
+                return False
+            
+            payment_data = self.parse_payment_message(message.text)
+            if not payment_data:
+                return False
+            
+            payment_id = payment_data.get('payment_id')
+            amount = payment_data.get('amount', 0)
+            username = payment_data.get('username')
+            comment = payment_data.get('comment', '')
+            full_name = payment_data.get('full_name', '')
+            
+            print(f"\n💰 Обрабатываем платёж из канала:")
+            print(f"   ID: {payment_id}")
+            print(f"   Сумма: {amount} USDT")
+            print(f"   Username: @{username}")
+            print(f"   Комментарий: '{comment}'")
+            
+            # Проверяем минимальную сумму
+            if amount < MIN_BET:
+                print(f"⚠️ Игнорируем малый платёж: {amount} USDT (мин: {MIN_BET})")
+                return False
+            
+            # Проверяем username
+            if not username:
+                print("⚠️ Нет username в платеже")
+                return False
+            
+            # Определяем тип ставки
+            bet_type = self.parse_bet_from_comment(comment)
+            if not bet_type:
+                print(f"⚠️ Не удалось определить тип ставки из: '{comment}'")
+                return False
+            
+            # Проверяем тип ставки
+            if bet_type not in BET_TYPES:
+                print(f"⚠️ Неизвестный тип ставки: '{bet_type}'")
+                return False
+            
+            # Сохраняем платеж в файл для обработки в main.py
+            # main.py найдет user_id по username и вызовет create_game_from_payment
+            self._save_pending_payment(payment_id, payment_data, bet_type)
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Ошибка обработки платежа из канала: {e}")
+            return False
+
+    def _save_pending_payment(self, payment_id, payment_data, bet_type):
+        """Сохраняет платеж в файл для обработки в main.py"""
+        try:
+            pending_data = {
+                'payment_id': payment_id,
+                'payment_data': payment_data,
+                'bet_type': bet_type,
+                'timestamp': time.time(),
+                'processed': False
+            }
+            
+            # Загружаем существующие данные
+            if os.path.exists('pending_payments.json'):
+                with open('pending_payments.json', 'r', encoding='utf-8') as f:
+                    pending_payments = json.load(f)
+            else:
+                pending_payments = []
+            
+            # Добавляем новый платеж
+            pending_payments.append(pending_data)
+            
+            # Сохраняем
+            with open('pending_payments.json', 'w', encoding='utf-8') as f:
+                json.dump(pending_payments, f, indent=4, ensure_ascii=False)
+            
+            print(f"✅ Платёж {payment_id} сохранен в pending_payments.json")
+            
+        except Exception as e:
+            print(f"❌ Ошибка сохранения платежа: {e}")
+
+    def create_game_from_payment(self, user_id, username, amount, bet_type, nickname):
+        """Создает игру из платежа"""
+        try:
+            print(f"\n🎮 Создаем игру из платежа:")
+            print(f"   User ID: {user_id}")
+            print(f"   Username: @{username}")
+            print(f"   Сумма: {amount} USDT")
+            print(f"   Тип ставки: {bet_type}")
+            print(f"   Никнейм: {nickname}")
+            
+            # Получаем конфигурацию ставки
+            if bet_type.startswith('куб_'):
+                bet_config = DICE_BET_TYPES[bet_type]
+            elif bet_type.startswith('баскет_'):
+                bet_config = BASKETBALL_BET_TYPES[bet_type]
+            elif bet_type.startswith('футбол_'):
+                bet_config = FOOTBALL_BET_TYPES[bet_type]
+            elif bet_type.startswith('дартс_'):
+                bet_config = DART_BET_TYPES[bet_type]
+            elif bet_type.startswith('боулинг_'):
+                bet_config = BOWLING_BET_TYPES[bet_type]
+            else:
+                print(f"⚠️ Неизвестный тип ставки: {bet_type}")
+                return False
+            
+            # Добавляем баланс пользователю
+            self.add_balance(user_id, amount)
+            print(f"💰 Баланс пользователя {user_id} увеличен на {amount} USDT")
+            
+            # Создаем данные для игры
+            game_data = {
+                'user_id': user_id,
+                'nickname': nickname,
+                'amount': amount,
+                'bet_type': bet_type,
+                'bet_config': bet_config,
+                'from_payment': True,
+                'username': username
+            }
+            
+            # Добавляем в очередь игр
+            self.game_queue.add_game(game_data)
+            print(f"✅ Игра добавлена в очередь для {nickname}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Ошибка создания игры из платежа: {e}")
+            return False
+
+    # ========== СТАРАЯ ЛОГИКА (оставляем без изменений) ==========
+    
     def show_games_menu(self, message):
         markup = types.InlineKeyboardMarkup(row_width=2)
         btn1 = types.InlineKeyboardButton("🎲 Кубик", callback_data="game_dice")
@@ -414,6 +713,7 @@ class BettingGame:
             bet_type = game_data['bet_type']
             bet_config = game_data['bet_config']
             from_bot = game_data.get('from_bot', False)
+            from_payment = game_data.get('from_payment', False)
 
             if bet_type.startswith('куб_'):
                 game_type = 'dice'
@@ -467,7 +767,7 @@ class BettingGame:
                     amount,
                     bet_type,
                     bet_config,
-                    from_bot
+                    from_bot or from_payment
                 )
 
             elif game_type == 'basketball':
@@ -488,7 +788,7 @@ class BettingGame:
                     amount,
                     bet_type,
                     bet_config,
-                    from_bot
+                    from_bot or from_payment
                 )
 
             elif game_type == 'football':
@@ -509,7 +809,7 @@ class BettingGame:
                     amount,
                     bet_type,
                     bet_config,
-                    from_bot
+                    from_bot or from_payment
                 )
 
             elif game_type == 'darts':
@@ -530,7 +830,7 @@ class BettingGame:
                     amount,
                     bet_type,
                     bet_config,
-                    from_bot
+                    from_bot or from_payment
                 )
 
             else:  # bowling
@@ -558,7 +858,7 @@ class BettingGame:
                         amount,
                         bet_type,
                         bet_config,
-                        from_bot
+                        from_bot or from_payment
                     )
 
                 else:
@@ -627,13 +927,13 @@ class BettingGame:
                         amount,
                         bet_type,
                         bet_config,
-                        from_bot
+                        from_bot or from_payment
                     )
 
         except Exception as e:
             print(f"❌ Ошибка при создании игры в канале: {e}")
 
-    def _send_game_result_with_image(self, dice_message_id, dice_value, user_id, nickname, amount, bet_type, bet_config, from_bot):
+    def _send_game_result_with_image(self, dice_message_id, dice_value, user_id, nickname, amount, bet_type, bet_config, should_add_balance):
         """Отправляет результат игры с изображением (общая функция для всех игр)"""
         try:
             # Определяем выигрыш
@@ -661,7 +961,7 @@ class BettingGame:
 
             if is_win:
                 winnings = amount * bet_config['multiplier']
-                if from_bot:
+                if should_add_balance:
                     self.add_balance(user_id, winnings)
                     print(f"🎉 Победа! Начислено {winnings} USDT пользователю {user_id}")
 
