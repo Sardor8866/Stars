@@ -22,6 +22,9 @@ CRYPTOBOT_TOKEN = os.environ.get('CRYPTOBOT_TOKEN', "477733:AAzooy5vcnCpJuGgTZc1
 CRYPTO_API_URL = "https://pay.crypt.bot/api"
 ADMIN_CHAT_ID = 8118184388
 
+# URL сервера (для Render.com)
+SERVER_URL = os.environ.get('SERVER_URL', 'https://stars-prok.onrender.com')
+
 # Ссылка на многоразовый счет (создан вручную через @CryptoBot)
 MULTI_USE_INVOICE_LINK = "https://t.me/send?start=IVNg7XnKzxBs"  # ЗАМЕНИ НА СВОЮ!
 
@@ -383,7 +386,8 @@ def index():
     return jsonify({
         "status": "Bot is running",
         "timestamp": time.time(),
-        "processed_payments": len(processed_payments)
+        "processed_payments": len(processed_payments),
+        "known_users": len(username_to_id)
     })
 
 @app.route('/health', methods=['GET'])
@@ -394,6 +398,21 @@ def health_check():
         "processed_payments": len(processed_payments),
         "known_users": len(username_to_id)
     }), 200
+
+@app.route('/webhook/telegram', methods=['POST'])
+def telegram_webhook():
+    """Обработчик вебхука от Telegram"""
+    try:
+        if request.headers.get('content-type') == 'application/json':
+            json_string = request.get_data().decode('utf-8')
+            update = telebot.types.Update.de_json(json_string)
+            bot.process_new_updates([update])
+            return '', 200
+        else:
+            return 'Invalid content type', 400
+    except Exception as e:
+        print(f"❌ Ошибка обработки Telegram webhook: {e}")
+        return 'Error', 500
 
 @app.route('/check_payments', methods=['POST'])
 def manual_check():
@@ -471,16 +490,16 @@ def show_profile(message):
 4. Бот проверит платёж через 15-30 секунд!
 
 <b>📝 Примеры комментариев:</b>
-- <code>куб_чет @{message.from_user.username}</code>
-- <code>баскет_гол @{message.from_user.username}</code>
-- <code>футбол_мимо @{message.from_user.username}</code>
+• <code>куб_чет @{message.from_user.username}</code>
+• <code>баскет_гол @{message.from_user.username}</code>
+• <code>футбол_мимо @{message.from_user.username}</code>
 
 <b>🎯 Доступные ставки:</b>
-- Кубик: куб_чет, куб_нечет, куб_мал, куб_бол, куб_1-куб_6
-- Баскетбол: баскет_гол, баскет_мимо, баскет_3очка
-- Футбол: футбол_гол, футбол_мимо
-- Дартс: дартс_белое, дартс_красное, дартс_мимо, дартс_центр
-- Боулинг: боулинг_победа, боулинг_поражение, боулинг_страйк
+• Кубик: куб_чет, куб_нечет, куб_мал, куб_бол, куб_1-куб_6
+• Баскетбол: баскет_гол, баскет_мимо, баскет_3очка
+• Футбол: футбол_гол, футбол_мимо
+• Дартс: дартс_белое, дартс_красное, дартс_мимо, дартс_центр
+• Боулинг: боулинг_победа, боулинг_поражение, боулинг_страйк
 
 <b>👛 Ваш баланс: <code>{balance:.2f} USDT</code></b>
 <b>📝 Ваш username для комментария: @{message.from_user.username}</b>
@@ -622,21 +641,60 @@ def callback_handler(call):
                 if bet_type in BET_TYPES:
                     game.request_amount(call, bet_type)
 
+def setup_telegram_webhook():
+    """Настраивает Telegram webhook"""
+    try:
+        webhook_url = f"{SERVER_URL}/webhook/telegram"
+        
+        # Удаляем старый вебхук
+        bot.remove_webhook()
+        time.sleep(1)
+        
+        # Устанавливаем новый
+        bot.set_webhook(url=webhook_url)
+        
+        # Проверяем установку
+        webhook_info = bot.get_webhook_info()
+        
+        print(f"✅ Telegram webhook установлен")
+        print(f"   URL: {webhook_info.url}")
+        print(f"   Pending: {webhook_info.pending_update_count}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка установки Telegram webhook: {e}")
+        return False
+
 def run_flask():
     """Запускает Flask сервер"""
     port = int(os.environ.get('PORT', 10000))
     print(f"🚀 Запуск Flask сервера на порту {port}")
+    print(f"🌐 URL: {SERVER_URL}")
     serve(app, host='0.0.0.0', port=port)
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("🤖 БОТ ЗАПУЩЕН С ПЕРИОДИЧЕСКОЙ ПРОВЕРКОЙ ПЛАТЕЖЕЙ")
+    print("🤖 БОТ ЗАПУЩЕН")
     print("=" * 60)
     print(f"👑 Админ ID: {ADMIN_CHAT_ID}")
     print(f"💰 Минимальная ставка: {MIN_BET} USDT")
+    print(f"🌐 Server URL: {SERVER_URL}")
     print(f"🔗 Многоразовый счет: {MULTI_USE_INVOICE_LINK}")
     
-    # Проверяем токен CryptoBot
+    # Загружаем данные
+    load_user_mappings()
+    load_processed_payments()
+    
+    # Настраиваем Telegram webhook
+    print("\n📱 Настройка Telegram webhook...")
+    if setup_telegram_webhook():
+        print("✅ Telegram webhook успешно настроен!")
+    else:
+        print("⚠️ Не удалось настроить Telegram webhook")
+    
+    # Проверяем CryptoBot API
+    print("\n💳 Проверка CryptoBot API...")
     try:
         headers = {'Crypto-Pay-API-Token': CRYPTOBOT_TOKEN}
         response = requests.get(f'{CRYPTO_API_URL}/getMe', headers=headers, timeout=5)
@@ -662,7 +720,8 @@ if __name__ == "__main__":
     # Запускаем поток проверки платежей
     payment_thread = threading.Thread(target=payment_checker_loop, daemon=True)
     payment_thread.start()
-    print("✅ Поток проверки платежей запущен!")
+    print("\n✅ Поток проверки платежей запущен!")
     
+    print("\n🚀 Запуск Flask сервера...")
     # Запускаем Flask сервер (он будет работать в основном потоке)
     run_flask()
