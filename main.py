@@ -14,15 +14,16 @@ from games import BettingGame, BET_TYPES, MIN_BET, CHANNEL_LINK
 from referrals import ReferralSystem
 
 # Инициализация бота
-bot = telebot.TeleBot('8400110033:AAH9NyaOW4us1hhiLGVIr9EobgnsRaowWLo')
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8400110033:AAH9NyaOW4us1hhiLGVIr9EobgnsRaowWLo')
+bot = telebot.TeleBot(BOT_TOKEN)
 
 # Конфигурация CryptoBot API
-CRYPTOBOT_TOKEN = "477733:AAzooy5vcnCpJuGgTZc1Rdfbu71bqmrRMgr"
+CRYPTOBOT_TOKEN = os.environ.get('CRYPTOBOT_TOKEN', "477733:AAzooy5vcnCpJuGgTZc1Rdfbu71bqmrRMgr")
 CRYPTO_API_URL = "https://pay.crypt.bot/api"
 ADMIN_CHAT_ID = 8118184388
 
-# Вебхук секрет
-WEBHOOK_SECRET = os.environ.get('WEBHOOK_SECRET', 'your-secret-token-here')
+# Ссылка на многоразовый счет (создан вручную через @CryptoBot)
+MULTI_USE_INVOICE_LINK = "https://t.me/send?start=IVNg7XnKzxBs"  # ЗАМЕНИ НА СВОЮ!
 
 # Инициализация модулей
 game = BettingGame(bot)
@@ -37,19 +38,19 @@ username_to_id = {}
 # Множество для отслеживания обработанных платежей
 processed_payments = set()
 
+# Время последней проверки платежей
+last_check_time = time.time() - 3600  # Начинаем с 1 час назад
+
 # Flask приложение
 app = Flask(__name__)
 
 def save_user_info(user_id, username, first_name):
     """Сохраняет информацию о пользователе во всех местах"""
-    # 1. В реферальной системе
     referral_system.save_user_info(user_id, username, first_name)
 
-    # 2. В словаре username_to_id
     if username:
         username_to_id[username] = user_id
 
-    # 3. В файле для постоянного хранения
     try:
         try:
             with open('user_mappings.json', 'r', encoding='utf-8') as f:
@@ -85,39 +86,50 @@ def load_user_mappings():
     except:
         print("ℹ️ Файл user_mappings.json не найден, создадим новый")
 
+def load_processed_payments():
+    """Загружает уже обработанные платежи из файла"""
+    global processed_payments
+    try:
+        with open('processed_payments.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            processed_payments = set(data)
+        print(f"✅ Загружено {len(processed_payments)} обработанных платежей")
+    except:
+        print("ℹ️ Файл processed_payments.json не найден, создадим новый")
+
+def save_processed_payment(payment_id):
+    """Сохраняет ID обработанного платежа"""
+    processed_payments.add(payment_id)
+    try:
+        with open('processed_payments.json', 'w', encoding='utf-8') as f:
+            json.dump(list(processed_payments), f, indent=4)
+    except Exception as e:
+        print(f"⚠️ Ошибка сохранения processed_payments: {e}")
+
 def parse_payment_comment(comment):
     """Парсит комментарий к платежу - ТОЛЬКО ТИП СТАВКИ"""
     if not comment:
         return None, None, None
     
-    # Убираем лишние пробелы
     comment = comment.strip().lower()
-    
-    # Убираем username если есть
     comment = re.sub(r'@\w+', '', comment).strip()
     
-    # Разбиваем на части
     parts = re.split(r'\s+', comment)
     
-    # Ищем тип ставки в любой части
     for part in parts:
-        # Проверяем точное совпадение
         if part in BET_TYPES:
             return None, part, None
         
-        # Пробуем с дефисом
         if '-' in part:
             variant = part.replace('-', '_')
             if variant in BET_TYPES:
                 return None, variant, None
         
-        # Пробуем с подчеркиванием
         if '_' in part:
             variant = part.replace('_', '-')
             if variant in BET_TYPES:
                 return None, variant, None
     
-    # Если не нашли, пробуем комбинацию слов
     if len(parts) >= 2:
         combined = f"{parts[0]}_{parts[1]}"
         if combined in BET_TYPES:
@@ -134,41 +146,42 @@ def extract_username_from_comment(comment):
     if not comment:
         return None
     
-    # Ищем @username в комментарии
     username_match = re.search(r'@(\w+)', comment)
     if username_match:
         return username_match.group(1).lower()
     
     return None
 
-def process_invoice_payment(payment_data):
+def process_invoice_payment(invoice):
     """Обрабатывает оплаченный инвойс"""
     try:
-        payment_id = payment_data.get('invoice_id') or payment_data.get('payment_id')
+        payment_id = str(invoice.get('invoice_id'))
         
-        if not payment_id or payment_id in processed_payments:
+        if payment_id in processed_payments:
             return
         
         # Получаем данные платежа
-        amount = float(payment_data.get('amount', 0))
-        asset = payment_data.get('asset', 'USDT')
-        comment = payment_data.get('comment', '').strip()
+        amount = float(invoice.get('amount', 0))
+        asset = invoice.get('asset', 'USDT')
+        comment = invoice.get('comment', '').strip()
+        paid_at = invoice.get('paid_at')
         
-        print(f"\n🔍 Вебхук: Платёж {payment_id}:")
+        print(f"\n🔍 Новый платёж {payment_id}:")
         print(f"   Сумма: {amount} {asset}")
         print(f"   Комментарий: '{comment}'")
+        print(f"   Время: {paid_at}")
         
         # Проверяем минимальную сумму
         if amount < MIN_BET:
             print(f"⚠️ Игнорируем малый платёж: {amount} USDT (мин: {MIN_BET})")
-            processed_payments.add(payment_id)
+            save_processed_payment(payment_id)
             return
         
         # Извлекаем username из комментария
         username = extract_username_from_comment(comment)
         if not username:
             print(f"⚠️ Не найден username в комментарии: '{comment}'")
-            processed_payments.add(payment_id)
+            save_processed_payment(payment_id)
             return
         
         # Парсим тип ставки
@@ -177,7 +190,6 @@ def process_invoice_payment(payment_data):
         if not bet_type:
             print(f"⚠️ Не удалось определить тип ставки из комментария: '{comment}'")
             
-            # Отправляем сообщение об ошибке если username найден
             if username in username_to_id:
                 user_id = username_to_id[username]
                 try:
@@ -197,13 +209,13 @@ def process_invoice_payment(payment_data):
                 except:
                     pass
             
-            processed_payments.add(payment_id)
+            save_processed_payment(payment_id)
             return
         
         # Проверяем тип ставки
         if bet_type not in BET_TYPES:
             print(f"⚠️ Неизвестный тип ставки: '{bet_type}'")
-            processed_payments.add(payment_id)
+            save_processed_payment(payment_id)
             return
         
         bet_config = BET_TYPES[bet_type]
@@ -214,7 +226,7 @@ def process_invoice_payment(payment_data):
             user_id = username_to_id[username]
         else:
             print(f"⚠️ Username '@{username}' не найден в базе")
-            processed_payments.add(payment_id)
+            save_processed_payment(payment_id)
             return
         
         # Получаем информацию о пользователе
@@ -225,7 +237,6 @@ def process_invoice_payment(payment_data):
             if user_info.last_name:
                 nickname += f" {user_info.last_name}"
             
-            # Сохраняем информацию
             save_user_info(
                 user_id,
                 user_info.username,
@@ -271,7 +282,7 @@ def process_invoice_payment(payment_data):
         except Exception as e:
             print(f"⚠️ Не удалось отправить уведомление пользователю {user_id}: {e}")
         
-        processed_payments.add(payment_id)
+        save_processed_payment(payment_id)
         
         # Сохраняем в лог
         try:
@@ -286,66 +297,119 @@ def process_invoice_payment(payment_data):
                     'comment': comment,
                     'timestamp': time.time(),
                     'date': time.strftime('%Y-%m-%d %H:%M:%S'),
-                    'source': 'webhook'
+                    'source': 'api_check'
                 }
                 f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
         except:
             pass
         
     except Exception as e:
-        print(f"❌ Ошибка обработки платежа из вебхука: {e}")
+        print(f"❌ Ошибка обработки платежа: {e}")
         import traceback
         traceback.print_exc()
 
-# ВЕБХУК РОУТЫ
+def check_new_payments():
+    """
+    Проверяет новые платежи через CryptoBot API
+    Вызывается периодически в фоновом потоке
+    """
+    global last_check_time
+    
+    try:
+        headers = {'Crypto-Pay-API-Token': CRYPTOBOT_TOKEN}
+        
+        # Получаем последние оплаченные инвойсы
+        response = requests.get(
+            f'{CRYPTO_API_URL}/getInvoices',
+            headers=headers,
+            params={
+                'asset': 'USDT',
+                'status': 'paid',  # Только оплаченные
+                'count': 100  # Последние 100
+            },
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if data.get('ok'):
+                invoices = data['result'].get('items', [])
+                
+                new_payments = 0
+                for invoice in invoices:
+                    invoice_id = str(invoice.get('invoice_id'))
+                    paid_at = invoice.get('paid_at')
+                    
+                    # Пропускаем уже обработанные
+                    if invoice_id in processed_payments:
+                        continue
+                    
+                    # Проверяем время оплаты (только новые за последние 5 минут)
+                    if paid_at and paid_at > last_check_time:
+                        process_invoice_payment(invoice)
+                        new_payments += 1
+                
+                if new_payments > 0:
+                    print(f"✅ Обработано новых платежей: {new_payments}")
+                
+                last_check_time = time.time()
+            else:
+                print(f"⚠️ Ошибка CryptoBot API: {data.get('error')}")
+        else:
+            print(f"❌ HTTP ошибка при проверке платежей: {response.status_code}")
+    
+    except Exception as e:
+        print(f"❌ Ошибка проверки платежей: {e}")
+
+def payment_checker_loop():
+    """
+    Бесконечный цикл проверки платежей
+    Запускается в отдельном потоке
+    """
+    print("🔄 Запущен мониторинг платежей (каждые 15 сек)")
+    
+    while True:
+        try:
+            check_new_payments()
+            time.sleep(15)  # Проверяем каждые 15 секунд
+        except Exception as e:
+            print(f"❌ Ошибка в цикле проверки платежей: {e}")
+            time.sleep(30)  # При ошибке ждем дольше
+
+# Flask роуты
 @app.route('/')
 def index():
-    return jsonify({"status": "Bot is running", "timestamp": time.time()})
-
-@app.route('/webhook/cryptobot', methods=['POST'])
-def cryptobot_webhook():
-    """Обработчик вебхука от CryptoBot"""
-    try:
-        # Проверяем секретный токен
-        secret_token = request.headers.get('Crypto-Pay-Api-Secret')
-        if secret_token != WEBHOOK_SECRET:
-            print(f"⚠️ Неверный секретный токен вебхука")
-            return jsonify({"status": "error", "message": "Invalid token"}), 403
-        
-        data = request.json
-        print(f"📥 Получен вебхук от CryptoBot: {json.dumps(data, indent=2)}")
-        
-        # Проверяем тип события
-        update_type = data.get('update_type')
-        
-        if update_type == 'invoice_paid':
-            payment_data = data.get('payload', {})
-            # Обрабатываем в отдельном потоке
-            threading.Thread(target=process_invoice_payment, args=(payment_data,)).start()
-        
-        return jsonify({"status": "ok"}), 200
-        
-    except Exception as e:
-        print(f"❌ Ошибка обработки вебхука: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/webhook/telegram', methods=['POST'])
-def telegram_webhook():
-    """Обработчик вебхука от Telegram"""
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return '', 200
-    else:
-        return 'Invalid content type', 400
+    return jsonify({
+        "status": "Bot is running",
+        "timestamp": time.time(),
+        "processed_payments": len(processed_payments)
+    })
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "healthy", "timestamp": time.time()}), 200
+    return jsonify({
+        "status": "healthy",
+        "timestamp": time.time(),
+        "processed_payments": len(processed_payments),
+        "known_users": len(username_to_id)
+    }), 200
 
-# Загружаем сохраненные маппинги при запуске
+@app.route('/check_payments', methods=['POST'])
+def manual_check():
+    """Ручная проверка платежей (для тестирования)"""
+    try:
+        check_new_payments()
+        return jsonify({
+            "status": "ok",
+            "processed_total": len(processed_payments)
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# Загружаем сохраненные данные при запуске
 load_user_mappings()
+load_processed_payments()
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
@@ -394,7 +458,6 @@ def show_profile(message):
     user_id = message.from_user.id
     balance = game.get_balance(user_id)
     
-    # Обновленная инструкция с ВЕБХУКАМИ
     instruction_text = f"""
 <b>💳 Как сделать ставку через многоразовый счёт:</b>
 
@@ -405,30 +468,27 @@ def show_profile(message):
      <code>тип_ставки @ваш_username</code>
 
 3. Оплатите счёт
-4. Ставка создастся автоматически через вебхук!
+4. Бот проверит платёж через 15-30 секунд!
 
 <b>📝 Примеры комментариев:</b>
-• <code>куб_чет @{message.from_user.username}</code>
-• <code>баскет_гол @{message.from_user.username}</code>
-• <code>футбол_мимо @{message.from_user.username}</code>
+- <code>куб_чет @{message.from_user.username}</code>
+- <code>баскет_гол @{message.from_user.username}</code>
+- <code>футбол_мимо @{message.from_user.username}</code>
 
 <b>🎯 Доступные ставки:</b>
-• Кубик: куб_чет, куб_нечет, куб_мал, куб_бол, куб_1-куб_6
-• Баскетбол: баскет_гол, баскет_мимо, баскет_3очка
-• Футбол: футбол_гол, футбол_мимо
-• Дартс: дартс_белое, дартс_красное, дартс_мимо, дартс_центр
-• Боулинг: боулинг_победа, боулинг_поражение, боулинг_страйк
+- Кубик: куб_чет, куб_нечет, куб_мал, куб_бол, куб_1-куб_6
+- Баскетбол: баскет_гол, баскет_мимо, баскет_3очка
+- Футбол: футбол_гол, футбол_мимо
+- Дартс: дартс_белое, дартс_красное, дартс_мимо, дартс_центр
+- Боулинг: боулинг_победа, боулинг_поражение, боулинг_страйк
 
 <b>👛 Ваш баланс: <code>{balance:.2f} USDT</code></b>
 <b>📝 Ваш username для комментария: @{message.from_user.username}</b>
 """
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    # Используем многоразовую ссылку
-    MULTI_USE_INVOICE_LINK = "https://t.me/CryptoBot?start=invoice-XXXXXXXXXX"
     btn1 = types.InlineKeyboardButton("💳 Сделать ставку", url=MULTI_USE_INVOICE_LINK)
-    btn2 = types.InlineKeyboardButton("🔄 Проверить платежи", callback_data="check_payments")
-    markup.add(btn1, btn2)
+    markup.add(btn1)
     
     image_url = "https://iimg.su/i/u0SuFd"
     bot.send_photo(message.chat.id,
@@ -439,7 +499,6 @@ def show_profile(message):
 
 @bot.message_handler(func=lambda message: message.text == "🤝 Партнеры")
 def show_partners(message):
-    """Показывает меню реферальной системы"""
     save_user_info(
         message.from_user.id,
         message.from_user.username,
@@ -473,78 +532,26 @@ def admin_add_balance(message):
             user_id = username_to_id[username]
             game.add_balance(user_id, amount)
             bot.reply_to(message, f"✅ Добавлено {amount} USDT пользователю @{username} (ID: {user_id})")
-            print(f"💰 Админ добавил {amount} USDT пользователю @{username} (ID: {user_id})")
         else:
             try:
                 user_id = int(username)
                 game.add_balance(user_id, amount)
                 bot.reply_to(message, f"✅ Добавлено {amount} USDT пользователю ID: {user_id}")
-                print(f"💰 Админ добавил {amount} USDT пользователю ID: {user_id}")
             except ValueError:
                 bot.reply_to(message, f"❌ Пользователь @{username} не найден.")
 
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка: {e}")
-        print(f"❌ Ошибка в /add: {e}")
 
-@bot.message_handler(commands=['addid'])
-def admin_add_balance_by_id(message):
+@bot.message_handler(commands=['check'])
+def admin_check_payments(message):
+    """Админ команда для ручной проверки платежей"""
     if message.from_user.id != ADMIN_CHAT_ID:
         return
-    try:
-        parts = message.text.split()
-        if len(parts) < 3:
-            bot.reply_to(message, "❌ Использование: /addid user_id сумма")
-            return
-        user_id = int(parts[1])
-        amount = float(parts[2])
-        game.add_balance(user_id, amount)
-        bot.reply_to(message, f"✅ Добавлено {amount} USDT пользователю ID: {user_id}")
-        print(f"💰 Админ добавил {amount} USDT пользователю ID: {user_id}")
-    except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка: {e}")
-
-@bot.message_handler(commands=['find'])
-def admin_find_user(message):
-    """Поиск пользователя по username или ID"""
-    if message.from_user.id != ADMIN_CHAT_ID:
-        return
-
-    try:
-        parts = message.text.split()
-        if len(parts) < 2:
-            bot.reply_to(message, "❌ Использование: /find username или /find id")
-            return
-
-        search = parts[1]
-
-        if search.startswith('@'):
-            search = search[1:]
-
-        if search in username_to_id:
-            user_id = username_to_id[search]
-            balance = game.get_balance(user_id)
-            bot.reply_to(message, f"✅ Найден: @{search}\nID: {user_id}\nБаланс: {balance:.2f} USDT")
-            return
-
-        try:
-            user_id = int(search)
-            balance = game.get_balance(user_id)
-            username = None
-            for uname, uid in username_to_id.items():
-                if uid == user_id:
-                    username = uname
-                    break
-
-            if username:
-                bot.reply_to(message, f"✅ Найден: ID: {user_id}\nUsername: @{username}\nБаланс: {balance:.2f} USDT")
-            else:
-                bot.reply_to(message, f"✅ Найден: ID: {user_id}\nUsername: не известен\nБаланс: {balance:.2f} USDT")
-        except ValueError:
-            bot.reply_to(message, f"❌ Пользователь @{search} не найден")
-
-    except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка: {e}")
+    
+    bot.reply_to(message, "🔄 Проверяю платежи...")
+    check_new_payments()
+    bot.reply_to(message, f"✅ Проверка завершена!\nОбработано всего: {len(processed_payments)} платежей")
 
 @bot.message_handler(commands=['stats'])
 def admin_stats(message):
@@ -553,7 +560,6 @@ def admin_stats(message):
 
     total_users = len(game.user_balances)
     total_balance = sum(game.user_balances.values())
-
     ref_stats = referral_system.get_stats(ADMIN_CHAT_ID)
 
     stats_text = f"""
@@ -570,97 +576,6 @@ def admin_stats(message):
     """
     bot.reply_to(message, stats_text, parse_mode='HTML')
 
-@bot.message_handler(commands=['payments'])
-def show_payments(message):
-    """Показывает последние платежи"""
-    if message.from_user.id != ADMIN_CHAT_ID:
-        return
-    
-    try:
-        text = "<b>💳 Обработанные платежи:</b>\n\n"
-        
-        # Читаем из лога последние платежи
-        try:
-            with open('payment_log.json', 'r', encoding='utf-8') as f:
-                lines = f.readlines()[-10:]  # Последние 10 платежей
-                
-            for i, line in enumerate(reversed(lines), 1):
-                try:
-                    payment = json.loads(line.strip())
-                    payment_id = payment.get('payment_id', 'N/A')
-                    amount = payment.get('amount', 0)
-                    username = payment.get('username', 'N/A')
-                    bet_type = payment.get('bet_type', 'N/A')
-                    date = payment.get('date', 'N/A')
-                    source = payment.get('source', 'unknown')
-                    
-                    text += f"{i}. 💸 <code>{amount} USDT</code>\n"
-                    text += f"   👤 @{username}\n"
-                    text += f"   🎯 {bet_type}\n"
-                    text += f"   📅 {date}\n"
-                    text += f"   📍 {source}\n\n"
-                except:
-                    pass
-        except:
-            text += "📭 Нет данных о платежах\n\n"
-        
-        text += f"<b>Всего обработано:</b> {len(processed_payments)} платежей"
-        
-        bot.reply_to(message, text, parse_mode='HTML')
-        
-    except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка: {e}")
-
-def handle_game_callbacks(call, game):
-    """Обработчик callback-кнопок игр"""
-    if call.data == "game_dice":
-        game.show_dice_menu(call)
-    elif call.data == "bet_dice_exact":
-        game.show_exact_numbers(call)
-    elif call.data.startswith("bet_dice_"):
-        bet_type = call.data.replace("bet_dice_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    elif call.data == "game_basketball":
-        game.show_basketball_menu(call)
-    elif call.data.startswith("bet_basketball_"):
-        bet_type = call.data.replace("bet_basketball_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    elif call.data == "game_football":
-        game.show_football_menu(call)
-    elif call.data.startswith("bet_football_"):
-        bet_type = call.data.replace("bet_football_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    elif call.data == "game_darts":
-        game.show_darts_menu(call)
-    elif call.data.startswith("bet_darts_"):
-        bet_type = call.data.replace("bet_darts_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    elif call.data == "game_bowling":
-        game.show_bowling_menu(call)
-    elif call.data.startswith("bet_bowling_"):
-        bet_type = call.data.replace("bet_bowling_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-
-def handle_referral_callbacks(call):
-    """Обработчик callback-кнопок реферальной системы"""
-    if call.data == "ref_menu":
-        referral_system.show_menu(call)
-    elif call.data == "ref_list":
-        referral_system.show_ref_list(call)
-    elif call.data == "ref_withdraw":
-        referral_system.show_withdraw(call)
-    elif call.data == "ref_share":
-        referral_system.show_share(call)
-
-def handle_bet_amount_input(message, game):
-    """Обработчик ввода суммы ставки"""
-    return game.process_bet_amount(message)
-
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_text(message):
     save_user_info(
@@ -669,26 +584,11 @@ def handle_text(message):
         message.from_user.first_name
     )
 
-    # Сначала проверяем, не является ли это выводом реферальных средств
     if referral_system.process_withdraw(message):
         return
 
-    # Затем проверяем, не является ли это ставкой
-    if handle_bet_amount_input(message, game):
+    if game.process_bet_amount(message):
         return
-
-@bot.callback_query_handler(func=lambda call: call.data == "check_payments")
-def handle_check_payments(call):
-    """Проверяет статус платежей"""
-    try:
-        payments_count = len(processed_payments)
-        bot.answer_callback_query(
-            call.id,
-            f"✅ Обработано платежей: {payments_count}\nВебхуки работают!",
-            show_alert=True
-        )
-    except:
-        bot.answer_callback_query(call.id, "✅ Платежи обрабатываются через вебхуки")
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -700,117 +600,70 @@ def callback_handler(call):
 
     if call.data == "menu":
         send_welcome(call.message)
-
-    # Реферальные callback-ы
     elif call.data in ["ref_menu", "ref_list", "ref_withdraw", "ref_share"]:
-        handle_referral_callbacks(call)
-
-    # Проверка платежей
-    elif call.data == "check_payments":
-        handle_check_payments(call)
-
-    # Игровые callback-ы
+        if call.data == "ref_menu":
+            referral_system.show_menu(call)
+        elif call.data == "ref_list":
+            referral_system.show_ref_list(call)
+        elif call.data == "ref_withdraw":
+            referral_system.show_withdraw(call)
+        elif call.data == "ref_share":
+            referral_system.show_share(call)
     else:
-        handle_game_callbacks(call, game)
-
-def setup_cryptobot_webhook():
-    """Настраивает вебхук в CryptoBot"""
-    try:
-        # Получаем URL вебхука
-        webhook_url = "https://stars-prok.onrender.com/webhook/cryptobot"
-        
-        headers = {'Crypto-Pay-API-Token': CRYPTOBOT_TOKEN}
-        
-        payload = {
-            'url': webhook_url,
-            'secret_token': WEBHOOK_SECRET
-        }
-        
-        response = requests.post(
-            f'{CRYPTO_API_URL}/setWebhook',
-            headers=headers,
-            json=payload,
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            if result.get('ok'):
-                print(f"✅ Вебхук CryptoBot установлен: {webhook_url}")
-                return True
-            else:
-                print(f"⚠️ Ошибка CryptoBot API: {result.get('error')}")
-        else:
-            print(f"❌ HTTP ошибка: {response.status_code}")
-        
-        return False
-        
-    except Exception as e:
-        print(f"❌ Ошибка установки вебхука CryptoBot: {e}")
-        return False
-
-def setup_telegram_webhook():
-    """Настраивает вебхук в Telegram"""
-    try:
-        # Получаем URL вебхука
-        webhook_url = "https://stars-prok.onrender.com/webhook/telegram"
-        
-        # Удаляем старый вебхук
-        bot.remove_webhook()
-        time.sleep(1)
-        
-        # Устанавливаем новый
-        bot.set_webhook(url=webhook_url)
-        
-        print(f"✅ Вебхук Telegram установлен: {webhook_url}")
-        print(f"✅ Токен бота: {bot.token[:10]}...")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Ошибка установки вебхука Telegram: {e}")
-        return False
+        # Игровые callback-ы
+        if call.data == "game_dice":
+            game.show_dice_menu(call)
+        elif call.data == "bet_dice_exact":
+            game.show_exact_numbers(call)
+        elif call.data.startswith("bet_"):
+            parts = call.data.split("_", 2)
+            if len(parts) >= 3:
+                bet_type = "_".join(parts[1:])
+                if bet_type in BET_TYPES:
+                    game.request_amount(call, bet_type)
 
 def run_flask():
     """Запускает Flask сервер"""
     port = int(os.environ.get('PORT', 10000))
     print(f"🚀 Запуск Flask сервера на порту {port}")
-    print(f"🌐 Ссылка: https://stars-prok.onrender.com")
     serve(app, host='0.0.0.0', port=port)
 
 if __name__ == "__main__":
-    print("=" * 50)
-    print("🤖 БОТ ЗАПУЩЕН С ВЕБХУКАМИ")
-    print("=" * 50)
+    print("=" * 60)
+    print("🤖 БОТ ЗАПУЩЕН С ПЕРИОДИЧЕСКОЙ ПРОВЕРКОЙ ПЛАТЕЖЕЙ")
+    print("=" * 60)
     print(f"👑 Админ ID: {ADMIN_CHAT_ID}")
     print(f"💰 Минимальная ставка: {MIN_BET} USDT")
+    print(f"🔗 Многоразовый счет: {MULTI_USE_INVOICE_LINK}")
     
-    # Загружаем данные пользователей
-    load_user_mappings()
+    # Проверяем токен CryptoBot
+    try:
+        headers = {'Crypto-Pay-API-Token': CRYPTOBOT_TOKEN}
+        response = requests.get(f'{CRYPTO_API_URL}/getMe', headers=headers, timeout=5)
+        if response.status_code == 200 and response.json().get('ok'):
+            app_info = response.json()['result']
+            print(f"✅ CryptoBot API подключен: {app_info.get('name', 'N/A')}")
+        else:
+            print("⚠️ Проблема с CryptoBot API токеном!")
+    except Exception as e:
+        print(f"❌ Не удалось проверить CryptoBot API: {e}")
     
-    # Настраиваем вебхук Telegram
-    print("📱 Настройка вебхука Telegram...")
-    if setup_telegram_webhook():
-        print("✅ Вебхук Telegram успешно настроен")
-    else:
-        print("⚠️ Не удалось настроить вебхук Telegram")
+    print("\n" + "=" * 60)
+    print("💡 ИНСТРУКЦИЯ ДЛЯ ПОЛЬЗОВАТЕЛЕЙ:")
+    print("=" * 60)
+    print("1. Нажать кнопку '💳 Сделать ставку'")
+    print(f"2. Ввести сумму (минимум {MIN_BET} USDT)")
+    print("3. В комментарии: 'тип_ставки @username'")
+    print("4. Пример: 'куб_чет @myusername'")
+    print("5. Оплатить счёт")
+    print("6. Бот проверит платёж через 15-30 сек!")
+    print("=" * 60)
     
-    # Настраиваем вебхук CryptoBot
-    print("💳 Настройка вебхука CryptoBot...")
-    if setup_cryptobot_webhook():
-        print("✅ Вебхук CryptoBot успешно настроен")
-    else:
-        print("⚠️ Не удалось настроить вебхук CryptoBot. Платежи не будут приходить!")
+    # Запускаем поток проверки платежей
+    payment_thread = threading.Thread(target=payment_checker_loop, daemon=True)
+    payment_thread.start()
+    print("✅ Поток проверки платежей запущен!")
     
-    print("\n" + "=" * 50)
-    print("💡 ИНСТРУКЦИЯ ДЛЯ СТАВОК ЧЕРЕЗ ВЕБХУКИ:")
-    print("=" * 50)
-    print("1. Нажмите кнопку '💳 Сделать ставку'")
-    print(f"2. Введите сумму (минимум {MIN_BET} USDT)")
-    print("3. В комментарии укажите: 'тип_ставки @ваш_username'")
-    print("4. Пример: 'куб_чет @ваш_username'")
-    print("5. Оплатите счёт")
-    print("6. CryptoBot отправит вебхук → бот создаст ставку!")
-    print("=" * 50)
-    
-    # Запускаем Flask сервер
+    # Запускаем Flask сервер (он будет работать в основном потоке)
     run_flask()
+```
