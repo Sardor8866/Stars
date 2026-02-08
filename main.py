@@ -26,7 +26,7 @@ ADMIN_CHAT_ID = 8118184388
 SERVER_URL = os.environ.get('SERVER_URL', 'https://stars-prok.onrender.com')
 
 # Ссылка на многоразовый счет (создан вручную через @CryptoBot)
-MULTI_USE_INVOICE_LINK = "https://t.me/send?start=IVNg7XnKzxBs"  # ЗАМЕНИ НА СВОЮ!
+MULTI_USE_INVOICE_LINK = "https://t.me/CryptoBot?start=invoice-XXXXXXXXXX"  # ЗАМЕНИ НА СВОЮ!
 
 # Инициализация модулей
 game = BettingGame(bot)
@@ -40,9 +40,6 @@ username_to_id = {}
 
 # Множество для отслеживания обработанных платежей
 processed_payments = set()
-
-# Время последней проверки платежей
-last_check_time = time.time() - 3600  # Начинаем с 1 час назад
 
 # Flask приложение
 app = Flask(__name__)
@@ -316,8 +313,6 @@ def check_new_payments():
     Проверяет новые платежи через CryptoBot API
     Вызывается периодически в фоновом потоке
     """
-    global last_check_time
-    
     try:
         headers = {'Crypto-Pay-API-Token': CRYPTOBOT_TOKEN}
         
@@ -342,21 +337,17 @@ def check_new_payments():
                 new_payments = 0
                 for invoice in invoices:
                     invoice_id = str(invoice.get('invoice_id'))
-                    paid_at = invoice.get('paid_at')
                     
                     # Пропускаем уже обработанные
                     if invoice_id in processed_payments:
                         continue
                     
-                    # Проверяем время оплаты (только новые за последние 5 минут)
-                    if paid_at and paid_at > last_check_time:
-                        process_invoice_payment(invoice)
-                        new_payments += 1
+                    # Обрабатываем новый платеж
+                    process_invoice_payment(invoice)
+                    new_payments += 1
                 
                 if new_payments > 0:
                     print(f"✅ Обработано новых платежей: {new_payments}")
-                
-                last_check_time = time.time()
             else:
                 print(f"⚠️ Ошибка CryptoBot API: {data.get('error')}")
         else:
