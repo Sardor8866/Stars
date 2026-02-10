@@ -8,7 +8,7 @@ from flask import Flask, request
 import requests
 
 # Настройки вебхука для Render
-WEBHOOK_URL = os.getenv('WEBHOOK_URL', 'https://your-app-name.onrender.com')  # Замените на ваш URL
+WEBHOOK_URL = os.getenv('WEBHOOK_URL', 'https://stars-prok.onrender.com')  # Замените на ваш URL
 WEBHOOK_PATH = '/webhook'
 SECRET_TOKEN = os.getenv('SECRET_TOKEN', 'YOUR_SECRET_TOKEN')  # Для безопасности
 
