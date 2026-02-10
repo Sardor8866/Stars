@@ -486,8 +486,9 @@ def api_stats():
 
 def run_web_server():
     """Запускает веб-сервер"""
-    print("🌐 Запуск веб-сервера на порту 5000...")
-    web_app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    port = int(os.environ.get('PORT', 5000))  # Render сам дает порт
+    print(f"🌐 Запуск веб-сервера на порту {port}...")
+    web_app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
 
 # Запускаем веб-сервер в отдельном потоке
 flask_thread = flask_threading.Thread(target=run_web_server, daemon=True)
