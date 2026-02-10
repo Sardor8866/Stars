@@ -358,60 +358,58 @@ web_invoice_system = WebInvoiceSystem(bot, game)
 
 # ========== ВЕБ-СЕРВЕР ДЛЯ ОБРАБОТКИ ЗАПРОСОВ ==========
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import threading as flask_threading
 
 # Создаем Flask приложение в отдельном потоке
 web_app = Flask(__name__)
-CORS(web_app)  # Разрешаем CORS для веб-интерфейса
 
-# Маппинг веб-игр в систему бота (используя конфигурацию из games.py)
-WEB_GAME_MAPPING = {
-    'dice': {
-        'Нечет': 'куб_нечет',
-        'Чет': 'куб_чет',
-        'Больше': 'куб_бол',
-        'Меньше': 'куб_мал',
-        '2Больше': 'куб_2больше',
-        '2Меньше': 'куб_2меньше'
-    },
-    'football': {
-        'Гол': 'футбол_гол',
-        'Мимо': 'футбол_мимо'
-    },
-    'basketball': {
-        'Гол': 'баскет_гол',
-        'Мимо': 'баскет_мимо',
-        'Трехочковый': 'баскет_3очка'
-    },
-    'darts': {
-        'Белое': 'дартс_белое',
-        'Красное': 'дартс_красное',
-        'Центр': 'дартс_центр',
-        'Мимо': 'дартс_мимо'
-    },
-    'bowling': {
-        'Поражение': 'боулинг_поражение',
-        'Победа': 'боулинг_победа',
-        'Страйк': 'боулинг_страйк'
-    }
-}
+# ========== ВАЖНО: НАСТРОЙКА CORS ДЛЯ NETLIFY ==========
+@web_app.after_request
+def after_request(response):
+    """Добавляем CORS заголовки для Netlify"""
+    # Разрешаем запросы с Netlify домена
+    response.headers.add('Access-Control-Allow-Origin', 'https://eloquent-narwhal-62b8dc.netlify.app')
+    # Также разрешаем локальные запросы для тестирования
+    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:5500')
+    response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:5500')
+    
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
-GAME_NAMES = {
-    'dice': 'Кубик',
-    'football': 'Футбол',
-    'basketball': 'Баскетбол',
-    'darts': 'Дартс',
-    'bowling': 'Боулинг'
-}
+@web_app.before_request
+def handle_preflight():
+    """Обработка OPTIONS запросов (preflight)"""
+    if request.method == "OPTIONS":
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', 'https://eloquent-narwhal-62b8dc.netlify.app')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
 
+# ========== API ЭНДПОИНТЫ ==========
 @web_app.route('/')
 def index():
-    return "LightWin Web API Server", 200
+    return "LightWin Web API Server - CORS enabled for Netlify", 200
 
-@web_app.route('/api/create_invoice', methods=['POST'])
+@web_app.route('/api/health', methods=['GET'])
+def api_health():
+    """Проверка работоспособности API"""
+    return jsonify({
+        'status': 'ok',
+        'service': 'LightWin API',
+        'timestamp': datetime.now().isoformat(),
+        'cors_enabled': True,
+        'netlify_domain': 'https://eloquent-narwhal-62b8dc.netlify.app'
+    })
+
+@web_app.route('/api/create_invoice', methods=['POST', 'OPTIONS'])
 def api_create_invoice():
     """API для создания счета из веб-интерфейса"""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'})
+    
     try:
         data = request.json
         
@@ -429,6 +427,23 @@ def api_create_invoice():
         # Проверяем минимальную сумму
         if amount < 0.15:
             return jsonify({'error': f'Минимальная сумма ставки: 0.15 USDT'}), 400
+        
+        # Маппинг веб-игр в систему бота
+        WEB_GAME_MAPPING = {
+            'dice': {'Нечет': 'куб_нечет', 'Чет': 'куб_чет', 'Больше': 'куб_бол', 'Меньше': 'куб_мал', '2Больше': 'куб_2больше', '2Меньше': 'куб_2меньше'},
+            'football': {'Гол': 'футбол_гол', 'Мимо': 'футбол_мимо'},
+            'basketball': {'Гол': 'баскет_гол', 'Мимо': 'баскет_мимо', 'Трехочковый': 'баскет_3очка'},
+            'darts': {'Белое': 'дартс_белое', 'Красное': 'дартс_красное', 'Центр': 'дартс_центр', 'Мимо': 'дартс_мимо'},
+            'bowling': {'Поражение': 'боулинг_поражение', 'Победа': 'боулинг_победа', 'Страйк': 'боулинг_страйк'}
+        }
+        
+        GAME_NAMES = {
+            'dice': 'Кубик',
+            'football': 'Футбол',
+            'basketball': 'Баскетбол',
+            'darts': 'Дартс',
+            'bowling': 'Боулинг'
+        }
         
         # Проверяем существование игры и исхода
         if game_type not in WEB_GAME_MAPPING:
@@ -486,7 +501,7 @@ def api_stats():
 
 def run_web_server():
     """Запускает веб-сервер"""
-    port = int(os.environ.get('PORT', 5000))  # Render сам дает порт
+    port = int(os.environ.get('PORT', 10000))
     print(f"🌐 Запуск веб-сервера на порту {port}...")
     web_app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
 
@@ -800,7 +815,6 @@ def handle_game_callbacks(call):
         game.show_exact_numbers(call)
     elif call.data.startswith("bet_dice_"):
         bet_type = call.data.replace("bet_dice_", "")
-        # Импортируем BET_TYPES из games.py
         from games import BET_TYPES
         if bet_type in BET_TYPES:
             game.request_amount(call, bet_type)
@@ -881,7 +895,7 @@ def callback_handler(call):
 if __name__ == "__main__":
     print("🤖 LightWin Бот запущен...")
     print(f"👑 Админ ID: {ADMIN_CHAT_ID}")
-    print("🌐 Веб-сервер запущен на порту 5000")
+    print("🌐 Веб-сервер с CORS для Netlify запущен")
     print("🎮 Игровая логика загружена из games.py")
     print("👥 Реферальная система загружена из referrals.py")
     print("💡 Доступные команды:")
@@ -890,7 +904,7 @@ if __name__ == "__main__":
     print("/find username/id - найти пользователя")
     print("/stats - статистика бота")
     print("🎯 Игры: 🎲 Кубик, 🏀 Баскетбол, ⚽ Футбол, 🎯 Дартс, 🎳 Боулинг")
-    print("🌐 Веб-интерфейс: API доступен на http://localhost:5000/api")
+    print("🌐 Веб-интерфейс: API доступен на https://eloquent-narwhal-62b8dc.netlify.app")
     
     restart_count = 0
     max_restarts = 10
