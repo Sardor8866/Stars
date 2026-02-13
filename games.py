@@ -323,6 +323,8 @@ class BettingGame:
 
     def request_amount(self, call, bet_type):
         user_id = call.from_user.id
+        print(f"💬 request_amount вызван: user_id={user_id}, bet_type={bet_type}")
+        
         balance = self.get_balance(user_id)
 
         if bet_type.startswith('куб_'):
@@ -356,14 +358,26 @@ class BettingGame:
             self.bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=markup)
         except:
             self.bot.send_message(call.message.chat.id, text, parse_mode='HTML', reply_markup=markup)
+        
         self.pending_bets[user_id] = bet_type
+        print(f"✅ Сохранено в pending_bets: user_id={user_id}, bet_type={bet_type}")
+        print(f"📊 Текущие pending_bets: {self.pending_bets}")
 
     def process_bet_amount(self, message):
         user_id = message.from_user.id
+        print(f"💰 process_bet_amount вызван для user_id={user_id}")
+        print(f"💰 pending_bets: {self.pending_bets}")
+        
         if user_id not in self.pending_bets:
+            print(f"⚠️ user_id={user_id} не найден в pending_bets")
             return False
+            
+        print(f"✅ user_id={user_id} найден в pending_bets, обрабатываем ставку...")
+        
         try:
             amount = float(message.text)
+            print(f"💵 Введённая сумма: {amount}")
+            
             if amount < MIN_BET:
                 self.bot.send_message(message.chat.id, f"❌ Минимальная ставка: {MIN_BET} USDT")
                 return True
