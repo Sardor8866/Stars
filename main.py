@@ -621,6 +621,8 @@ def handle_bet_selection(call):
 
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_text(message):
+    print(f"📨 Получено текстовое сообщение от {message.from_user.id}: {message.text}")
+    
     update_username_mapping(message.from_user.id, message.from_user.username)
     save_user_info(
         message.from_user.id,
@@ -629,12 +631,18 @@ def handle_text(message):
     )
     
     # Проверяем, не является ли это вводом суммы ставки
+    print(f"🔍 Проверяем ввод суммы ставки...")
     if game.process_bet_amount(message):
+        print(f"✅ Сообщение обработано как ввод суммы ставки")
         return
     
     # Проверяем, не является ли это выводом реферальных средств
+    print(f"🔍 Проверяем вывод реферальных средств...")
     if referral_system.process_withdraw(message):
+        print(f"✅ Сообщение обработано как вывод реферальных средств")
         return
+    
+    print(f"ℹ️ Сообщение не обработано ни одним обработчиком")
 
 # ========== ЗАПУСК ==========
 
