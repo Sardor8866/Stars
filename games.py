@@ -11,14 +11,12 @@ MIN_BET = 0.15
 CHANNEL_ID = "@l1ght_win"
 CHANNEL_LINK = "https://t.me/l1ght_win"
 
-# Ссылка на бота для открытия мини-приложения
-BOT_LINK = "https://t.me/your_bot_username"  # Замените на username вашего бота
+# URL мини-приложения
 MINIAPP_URL = "https://eloquent-narwhal-62b8dc.netlify.app"
 
 # Ссылки на изображения для результатов
 WIN_IMAGE_URL = "https://iimg.su/i/P9Y9Ke"
 LOSE_IMAGE_URL = "https://iimg.su/i/fJCCZ2"
-# Ссылка для превью меню игр
 GAMES_MENU_IMAGE_URL = "https://iimg.su/i/d1Lle6"
 
 # Конфигурации для ставок
@@ -61,7 +59,6 @@ BOWLING_BET_TYPES = {
     'боулинг_страйк': {'name': 'Страйк ', 'values': [6], 'multiplier': 3.75},
 }
 
-# Общий словарь для обратной совместимости
 BET_TYPES = {**DICE_BET_TYPES, **BASKETBALL_BET_TYPES, **FOOTBALL_BET_TYPES, **DART_BET_TYPES, **BOWLING_BET_TYPES}
 
 class GameQueue:
@@ -73,21 +70,17 @@ class GameQueue:
     def add_game(self, game_data):
         with self.lock:
             self.queue.append(game_data)
-            print(f"➕ Игра добавлена в очередь. Размер очереди: {len(self.queue)}")
 
     def start_next_game(self):
         with self.lock:
             if self.active_game or not self.queue:
                 return None
             self.active_game = True
-            game = self.queue.popleft()
-            print(f"▶️ Начинаем игру из очереди. Осталось в очереди: {len(self.queue)}")
-            return game
+            return self.queue.popleft()
 
     def finish_game(self):
         with self.lock:
             self.active_game = False
-            print(f"✅ Игра завершена, очередь освобождена")
 
     def get_queue_size(self):
         with self.lock:
@@ -100,33 +93,20 @@ class BettingGame:
         self.user_balances = {}
         self.pending_bets = {}
         self.game_queue = GameQueue()
-        self.referral_system = None  # Будет установлено из main.py
-        self.miniapp_url = None  # Будет установлено из main.py
+        self.referral_system = None
+        self.miniapp_url = MINIAPP_URL
         self.load_balances()
-        # Запускаем процессор очереди в отдельном потоке
         self.start_queue_processor()
-        print("✅ BettingGame инициализирован, процессор очереди запущен")
 
     def start_queue_processor(self):
-        """Запускает обработчик очереди игр в отдельном потоке"""
         thread = threading.Thread(target=self._process_game_queue, daemon=True)
         thread.start()
-        print("🔄 Поток обработки очереди игр запущен")
-
-    def set_miniapp_url(self, url):
-        """Устанавливает URL мини-приложения"""
-        self.miniapp_url = url
-        print(f"✅ URL мини-приложения установлен: {url}")
 
     def add_game_to_queue(self, user_id, nickname, amount, game_type, outcome):
-        """Добавляет игру в очередь (для вызова из main.py)"""
-        # Находим bet_type по game_type и outcome
         bet_type = self._find_bet_type(game_type, outcome)
         if not bet_type:
-            print(f"❌ Не найден bet_type для game_type={game_type}, outcome={outcome}")
             return False
         
-        # Находим bet_config
         if bet_type.startswith('куб_'):
             bet_config = DICE_BET_TYPES[bet_type]
         elif bet_type.startswith('баскет_'):
@@ -138,7 +118,6 @@ class BettingGame:
         elif bet_type.startswith('боулинг_'):
             bet_config = BOWLING_BET_TYPES[bet_type]
         else:
-            print(f"❌ Неизвестный bet_type: {bet_type}")
             return False
         
         game_data = {
@@ -151,12 +130,9 @@ class BettingGame:
         }
         
         self.game_queue.add_game(game_data)
-        print(f"➕ Игра добавлена в очередь через add_game_to_queue: user_id={user_id}")
         return True
 
     def _find_bet_type(self, game_type, outcome):
-        """Находит bet_type по game_type и outcome"""
-        # Словарь соответствия
         mapping = {
             'dice': DICE_BET_TYPES,
             'basketball': BASKETBALL_BET_TYPES,
@@ -170,7 +146,6 @@ class BettingGame:
             if config['name'] == outcome or bet_type.endswith(outcome):
                 return bet_type
         
-        # Если не нашли по точному соответствию, пробуем по частичному
         for bet_type in game_dict.keys():
             if outcome in bet_type or bet_type in outcome:
                 return bet_type
@@ -178,19 +153,15 @@ class BettingGame:
         return None
 
     def get_bet_button_markup(self):
-        """Возвращает markup с кнопкой для ставки (WebApp если URL установлен, иначе обычная ссылка)"""
+        """Возвращает markup с WebApp кнопкой для ставки"""
         markup = types.InlineKeyboardMarkup()
         
-        if self.miniapp_url:
-            # Создаем WebApp кнопку
-            webapp_button = types.InlineKeyboardButton(
-                "💸 Сделать ставку",
-                web_app=types.WebAppInfo(url=self.miniapp_url)
-            )
-            markup.add(webapp_button)
-        else:
-            # Fallback на обычную ссылку
-            markup.add(types.InlineKeyboardButton("💸 Сделать ставку", url=BOT_LINK))
+        # Создаем WebApp кнопку
+        webapp_button = types.InlineKeyboardButton(
+            "💸 Сделать ставку",
+            web_app=types.WebAppInfo(url=self.miniapp_url)
+        )
+        markup.add(webapp_button)
         
         return markup
 
@@ -200,13 +171,10 @@ class BettingGame:
                 with open('balances.json', 'r') as f:
                     data = json.load(f)
                     self.user_balances = {int(k): float(v) for k, v in data.items()}
-                print(f"✅ Загружено {len(self.user_balances)} балансов")
             except Exception as e:
-                print(f"❌ Ошибка загрузки балансов: {e}")
                 self.user_balances = {}
         else:
             self.user_balances = {}
-            print("ℹ️ Файл балансов не найден, создан новый")
 
     def save_balances(self):
         try:
@@ -214,7 +182,7 @@ class BettingGame:
             with open('balances.json', 'w') as f:
                 json.dump(data_to_save, f, indent=4)
         except Exception as e:
-            print(f"❌ Ошибка сохранения балансов: {e}")
+            pass
 
     def get_balance(self, user_id):
         return float(self.user_balances.get(user_id, 0.0))
@@ -224,7 +192,6 @@ class BettingGame:
             self.user_balances[user_id] = 0.0
         self.user_balances[user_id] += float(amount)
         self.save_balances()
-        print(f"💰 Добавлено {amount} USDT пользователю {user_id}")
         return self.user_balances[user_id]
 
     def subtract_balance(self, user_id, amount):
@@ -232,7 +199,6 @@ class BettingGame:
         if self.get_balance(user_id) >= amount_float:
             self.user_balances[user_id] = max(0, self.user_balances.get(user_id, 0) - amount_float)
             self.save_balances()
-            print(f"💸 Снято {amount_float} USDT у пользователя {user_id}")
             return True
         return False
 
@@ -244,19 +210,13 @@ class BettingGame:
         btn4 = types.InlineKeyboardButton("🎯 Дартс", callback_data="game_darts")
         btn5 = types.InlineKeyboardButton("🎳 Боулинг", callback_data="game_bowling")
 
-        # Первый ряд: 2 кнопки
         markup.row(btn1, btn2)
-        # Второй ряд: 2 кнопки
         markup.row(btn3, btn4)
-        # Третий ряд: 1 большая кнопка
         markup.row(btn5)
 
-        games_text = f"""
-<b>🕹Игры:</b>
-        """
+        games_text = "<b>🕹Игры:</b>"
 
         try:
-            # Отправляем изображение с меню игр (ТОЛЬКО В ГЛАВНОМ МЕНЮ)
             self.bot.send_photo(
                 message.chat.id,
                 photo=GAMES_MENU_IMAGE_URL,
@@ -264,10 +224,7 @@ class BettingGame:
                 parse_mode='HTML',
                 reply_markup=markup
             )
-            print(f"✅ Меню игр с изображением отправлено пользователю {message.from_user.id}")
         except Exception as e:
-            print(f"❌ Ошибка при отправке изображения меню игр: {e}")
-            # Если не получилось отправить с изображением, отправляем просто текст
             self.bot.send_message(
                 message.chat.id,
                 games_text,
@@ -287,15 +244,8 @@ class BettingGame:
         
         markup.add(btn1, btn2, btn3, btn4, btn5, btn6, btn7)
         
-        text = f"""
-<b>🎲Кубик</b>
-
-<blockquote><b>Выберите исход:</b></blockquote>
-
-• <b>2 меньше (x3.6)</b> - оба кубика меньше 4 (1,2,3)
-• <b>2 больше (x3.6)</b> - оба кубика больше 3 (4,5,6)
-        """
-        # Отправляем новое сообщение (без изображения) при выборе игры
+        text = "<b>🎲Кубик</b>\n\n<blockquote><b>Выберите исход:</b></blockquote>"
+        
         self.bot.send_message(
             call.message.chat.id,
             text,
@@ -309,12 +259,9 @@ class BettingGame:
         btn2 = types.InlineKeyboardButton("❌ Мимо (x1.7)", callback_data="bet_basketball_баскет_мимо")
         btn3 = types.InlineKeyboardButton("🎯 3-очковый (x2.75)", callback_data="bet_basketball_баскет_3очка")
         markup.add(btn1, btn2, btn3)
-        text = """
-<b>🏀Баскетбол</b>
-
-<blockquote><b>Выберите исход броска:</b></blockquote>
-        """
-        # Отправляем новое сообщение (без изображения) при выборе игры
+        
+        text = "<b>🏀Баскетбол</b>\n\n<blockquote><b>Выберите исход броска:</b></blockquote>"
+        
         self.bot.send_message(
             call.message.chat.id,
             text,
@@ -327,12 +274,9 @@ class BettingGame:
         btn1 = types.InlineKeyboardButton("✅ Гол (x1.3)", callback_data="bet_football_футбол_гол")
         btn2 = types.InlineKeyboardButton("❌ Мимо (x1.7)", callback_data="bet_football_футбол_мимо")
         markup.add(btn1, btn2)
-        text = """
-<b>⚽Футбол</b>
-
-<blockquote><b>Выберите исход удара:</b></blockquote>
-        """
-        # Отправляем новое сообщение (без изображения) при выборе игры
+        
+        text = "<b>⚽Футбол</b>\n\n<blockquote><b>Выберите исход удара:</b></blockquote>"
+        
         self.bot.send_message(
             call.message.chat.id,
             text,
@@ -347,12 +291,9 @@ class BettingGame:
         btn3 = types.InlineKeyboardButton("❌ Мимо (x2.2)", callback_data="bet_darts_дартс_мимо")
         btn4 = types.InlineKeyboardButton("🎯 Центр (x3.35)", callback_data="bet_darts_дартс_центр")
         markup.add(btn1, btn2, btn3, btn4)
-        text = """
-<b>🎯Дартс</b>
-
-<blockquote><b>Выберите зону попадания:</b></blockquote>
-        """
-        # Отправляем новое сообщение (без изображения) при выборе игры
+        
+        text = "<b>🎯Дартс</b>\n\n<blockquote><b>Выберите зону попадания:</b></blockquote>"
+        
         self.bot.send_message(
             call.message.chat.id,
             text,
@@ -366,12 +307,9 @@ class BettingGame:
         btn2 = types.InlineKeyboardButton("✅ Победа (x1.8)", callback_data="bet_bowling_боулинг_победа")
         btn3 = types.InlineKeyboardButton("🎳 Страйк (x3.75)", callback_data="bet_bowling_боулинг_страйк")
         markup.add(btn1, btn2, btn3)
-        text = """
-<b>🎳Боулинг</b>
-
-<blockquote><b>Выберите исход:</b></blockquote>
-        """
-        # Отправляем новое сообщение (без изображения) при выборе игры
+        
+        text = "<b>🎳Боулинг</b>\n\n<blockquote><b>Выберите исход:</b></blockquote>"
+        
         self.bot.send_message(
             call.message.chat.id,
             text,
@@ -380,14 +318,13 @@ class BettingGame:
         )
 
     def show_exact_number_menu(self, call):
-        """Показывает меню выбора точного числа для кубика"""
         markup = types.InlineKeyboardMarkup(row_width=3)
         for i in range(1, 7):
             markup.add(types.InlineKeyboardButton(f"🎲 {i}", callback_data=f"bet_dice_куб_{i}"))
         markup.add(types.InlineKeyboardButton("◀️ Назад", callback_data="game_dice"))
-        text = """
-<b>🎲Выберите число (1-6)</b>
-        """
+        
+        text = "<b>🎲Выберите число (1-6)</b>"
+        
         try:
             self.bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=markup)
         except:
@@ -395,20 +332,7 @@ class BettingGame:
 
     def request_amount(self, call, bet_type):
         user_id = call.from_user.id
-        print(f"💬 request_amount вызван: user_id={user_id}, bet_type={bet_type}")
-        
         balance = self.get_balance(user_id)
-
-        if bet_type.startswith('куб_'):
-            bet_config = DICE_BET_TYPES[bet_type]
-        elif bet_type.startswith('баскет_'):
-            bet_config = BASKETBALL_BET_TYPES[bet_type]
-        elif bet_type.startswith('футбол_'):
-            bet_config = FOOTBALL_BET_TYPES[bet_type]
-        elif bet_type.startswith('дартс_'):
-            bet_config = DART_BET_TYPES[bet_type]
-        elif bet_type.startswith('боулинг_'):
-            bet_config = BOWLING_BET_TYPES[bet_type]
 
         markup = types.InlineKeyboardMarkup()
         if bet_type.startswith('куб_'):
@@ -422,38 +346,28 @@ class BettingGame:
         elif bet_type.startswith('боулинг_'):
             markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data="game_bowling"))
 
-        text = f"""
-<blockquote><b>📝Введите сумму ставки</b></blockquote>
-Ваш баланс: <code>{balance:.2f} USDT</code>
-Минимальная ставка: <code>{MIN_BET} USDT</code>
-        """
+        text = f"<blockquote><b>📝Введите сумму ставки</b></blockquote>\nВаш баланс: <code>{balance:.2f} USDT</code>\nМинимальная ставка: <code>{MIN_BET} USDT</code>"
+        
         try:
             self.bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=markup)
         except:
             self.bot.send_message(call.message.chat.id, text, parse_mode='HTML', reply_markup=markup)
         
         self.pending_bets[user_id] = bet_type
-        print(f"✅ Сохранено в pending_bets: user_id={user_id}, bet_type={bet_type}")
-        print(f"📊 Текущие pending_bets: {self.pending_bets}")
 
     def process_bet_amount(self, message):
         user_id = message.from_user.id
-        print(f"💰 process_bet_amount вызван для user_id={user_id}")
-        print(f"💰 pending_bets: {self.pending_bets}")
         
         if user_id not in self.pending_bets:
-            print(f"⚠️ user_id={user_id} не найден в pending_bets")
             return False
             
-        print(f"✅ user_id={user_id} найден в pending_bets, обрабатываем ставку...")
-        
         try:
             amount = float(message.text)
-            print(f"💵 Введённая сумма: {amount}")
             
             if amount < MIN_BET:
                 self.bot.send_message(message.chat.id, f"❌ Минимальная ставка: {MIN_BET} USDT")
                 return True
+                
             balance = self.get_balance(user_id)
             if balance < amount:
                 self.bot.send_message(
@@ -462,6 +376,7 @@ class BettingGame:
                     parse_mode='HTML'
                 )
                 return True
+                
             bet_type = self.pending_bets[user_id]
 
             if bet_type.startswith('куб_'):
@@ -499,6 +414,7 @@ class BettingGame:
                 reply_markup=markup,
                 parse_mode='HTML'
             )
+            
             game_data = {
                 'user_id': user_id,
                 'nickname': nickname,
@@ -507,54 +423,28 @@ class BettingGame:
                 'bet_config': bet_config,
                 'from_bot': True
             }
-            print(f"➕ Добавляем игру в очередь: user_id={user_id}, nickname={nickname}, amount={amount}, bet_type={bet_type}")
+            
             self.game_queue.add_game(game_data)
-            print(f"📊 Размер очереди после добавления: {self.game_queue.get_queue_size()}")
             del self.pending_bets[user_id]
             return True
+            
         except ValueError:
             self.bot.send_message(message.chat.id, "❌ Введите корректную сумму (например: 0.5)")
             return True
 
     def _process_game_queue(self):
-        """Процессор очереди игр - работает в отдельном потоке"""
-        print("🔄 Процессор очереди игр запущен и работает")
         while True:
             try:
                 game_data = self.game_queue.start_next_game()
                 if game_data:
-                    print(f"▶️ Обрабатываем игру из очереди: {game_data.get('nickname', 'Unknown')}")
-                    print(f"📊 Данные игры: {game_data}")
-                    try:
-                        self._create_channel_game(game_data)
-                    except Exception as e:
-                        print(f"❌ Ошибка при обработке игры: {e}")
-                        import traceback
-                        traceback.print_exc()
-                    finally:
-                        self.game_queue.finish_game()
-                        print(f"✅ Игра завершена, очередь освобождена")
-                time.sleep(1)  # Увеличил паузу до 1 секунды
+                    self._create_channel_game(game_data)
+                    self.game_queue.finish_game()
+                time.sleep(1)
             except Exception as e:
-                print(f"❌ Критическая ошибка в процессоре очереди: {e}")
                 time.sleep(5)
 
     def _create_channel_game(self, game_data):
-        """Создает игру в канале"""
         try:
-            print(f"🎮 НАЧАЛО СОЗДАНИЯ ИГРЫ В КАНАЛЕ")
-            print(f"📊 Данные игры: {game_data}")
-            print(f"📢 Канал: {CHANNEL_ID}")
-            
-            # Проверяем, может ли бот отправлять сообщения в канал
-            try:
-                test_message = self.bot.send_message(CHANNEL_ID, "🎮 Начинаем игру...")
-                print(f"✅ Бот может отправлять сообщения в канал")
-            except Exception as e:
-                print(f"❌ Бот НЕ может отправлять сообщения в канал: {e}")
-                print(f"⚠️ Убедитесь что бот добавлен в канал {CHANNEL_ID} как администратор")
-                return
-            
             user_id = game_data['user_id']
             nickname = game_data['nickname']
             amount = game_data['amount']
@@ -573,12 +463,8 @@ class BettingGame:
             else:
                 game_type = 'bowling'
 
-            print(f"🎲 Тип игры: {game_type}, Тип ставки: {bet_type}")
-            
-            # Экранируем HTML-специальные символы в названии ставки
             bet_name = bet_config['name'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-            # Исправленный текст без ошибок в HTML
             bet_message_text = f"""<blockquote><b>{nickname} ставит {amount:.2f}$ на {bet_name}</b></blockquote>
 
 <blockquote><b>коэффициент: x{bet_config['multiplier']}</b></blockquote>
@@ -587,47 +473,33 @@ class BettingGame:
 🍀 <b>Желаем удачи!</b>"""
 
             markup = self.get_bet_button_markup()
-            print(f"📤 Отправка сообщения о ставке в канал {CHANNEL_ID}")
             bet_message = self.bot.send_message(
                 CHANNEL_ID,
                 bet_message_text,
                 parse_mode='HTML',
                 reply_markup=markup
             )
-            print(f"✅ Сообщение о ставке отправлено, ID: {bet_message.message_id}")
             time.sleep(1)
 
             if game_type == 'dice':
-                print(f"🎲 Играем в кубик...")
-                
-                # Для специальных ставок "2 меньше" и "2 больше" - кидаем 2 кубика
                 if bet_type in ['куб_2меньше', 'куб_2больше']:
-                    print(f"🎲 Бросаем 2 кубика для ставки {bet_type}...")
-                    
-                    # Бросаем первый кубик
                     dice1_message = self.bot.send_dice(
                         CHANNEL_ID,
                         emoji="🎲",
                         reply_to_message_id=bet_message.message_id
                     )
-                    print(f"🎲 Первый кубик отправлен, ID: {dice1_message.message_id}")
                     time.sleep(2)
                     
-                    # Бросаем второй кубик
                     dice2_message = self.bot.send_dice(
                         CHANNEL_ID,
                         emoji="🎲",
                         reply_to_message_id=dice1_message.message_id
                     )
-                    print(f"🎲 Второй кубик отправлен, ID: {dice2_message.message_id}")
                     time.sleep(3)
                     
                     dice1_value = dice1_message.dice.value
                     dice2_value = dice2_message.dice.value
                     
-                    print(f"🎲 Результат: Кубик 1 = {dice1_value}, Кубик 2 = {dice2_value}")
-                    
-                    # Для этих ставок используем специальную обработку
                     self._process_double_dice_result(
                         dice2_message.message_id,
                         dice1_value,
@@ -640,15 +512,12 @@ class BettingGame:
                         from_bot
                     )
                 else:
-                    # Обычный бросок одного кубика
-                    print(f"🎲 Бросаем кубик...")
                     dice_message = self.bot.send_dice(
                         CHANNEL_ID,
                         emoji="🎲",
                         reply_to_message_id=bet_message.message_id
                     )
                     dice_value = dice_message.dice.value
-                    print(f"🎲 Результат: {dice_value}")
                     time.sleep(3)
 
                     self._send_game_result_with_image(
@@ -663,14 +532,12 @@ class BettingGame:
                     )
 
             elif game_type == 'basketball':
-                print(f"🏀 Бросаем баскетбольный мяч...")
                 dice_message = self.bot.send_dice(
                     CHANNEL_ID,
                     emoji="🏀",
                     reply_to_message_id=bet_message.message_id
                 )
                 dice_value = dice_message.dice.value
-                print(f"🏀 Результат: {dice_value}")
                 time.sleep(3)
 
                 self._send_game_result_with_image(
@@ -685,14 +552,12 @@ class BettingGame:
                 )
 
             elif game_type == 'football':
-                print(f"⚽ Бьем по воротам...")
                 dice_message = self.bot.send_dice(
                     CHANNEL_ID,
                     emoji="⚽",
                     reply_to_message_id=bet_message.message_id
                 )
                 dice_value = dice_message.dice.value
-                print(f"⚽ Результат: {dice_value}")
                 time.sleep(3)
 
                 self._send_game_result_with_image(
@@ -707,14 +572,12 @@ class BettingGame:
                 )
 
             elif game_type == 'darts':
-                print(f"🎯 Бросаем дротик...")
                 dice_message = self.bot.send_dice(
                     CHANNEL_ID,
                     emoji="🎯",
                     reply_to_message_id=bet_message.message_id
                 )
                 dice_value = dice_message.dice.value
-                print(f"🎯 Результат: {dice_value}")
                 time.sleep(3)
 
                 self._send_game_result_with_image(
@@ -728,12 +591,8 @@ class BettingGame:
                     from_bot
                 )
 
-            else:  # bowling
-                print(f"🎳 Играем в боулинг...")
-
+            else:
                 if bet_type == 'боулинг_страйк':
-                    # Для страйка кидаем только 1 эмоджи (игрок)
-                    print(f"🎳 Бросок игрока (страйк)...")
                     player_roll = self.bot.send_dice(
                         CHANNEL_ID,
                         emoji="🎳",
@@ -742,8 +601,6 @@ class BettingGame:
                     time.sleep(3)
 
                     dice_value = player_roll.dice.value
-
-                    print(f"🎳 Результат: {dice_value}")
 
                     self._send_game_result_with_image(
                         player_roll.message_id,
@@ -757,8 +614,6 @@ class BettingGame:
                     )
 
                 else:
-                    # Для победы/поражения кидаем 2 эмоджи
-                    print(f"🎳 Бросок игрока...")
                     player_roll = self.bot.send_dice(
                         CHANNEL_ID,
                         emoji="🎳",
@@ -766,7 +621,6 @@ class BettingGame:
                     )
                     time.sleep(2)
 
-                    print(f"🎳 Бросок бота...")
                     bot_roll = self.bot.send_dice(
                         CHANNEL_ID,
                         emoji="🎳",
@@ -777,14 +631,9 @@ class BettingGame:
                     player_value = player_roll.dice.value
                     bot_value = bot_roll.dice.value
 
-                    print(f"🎳 Результат: Игрок = {player_value}, Бот = {bot_value}")
-
-                    # Проверяем, нужно ли перебрасывать при ничьей
                     if player_value == bot_value:
-                        print(f"🎳 Ничья! Перебрасываем...")
                         time.sleep(1)
 
-                        # Перебрасываем еще раз
                         player_roll = self.bot.send_dice(
                             CHANNEL_ID,
                             emoji="🎳",
@@ -801,9 +650,7 @@ class BettingGame:
 
                         player_value = player_roll.dice.value
                         bot_value = bot_roll.dice.value
-                        print(f"🎳 Результат после переброса: Игрок = {player_value}, Бот = {bot_value}")
 
-                    # Определяем результат
                     is_win = False
                     if bet_type == 'боулинг_поражение':
                         if player_value < bot_value:
@@ -812,7 +659,6 @@ class BettingGame:
                         if player_value > bot_value:
                             is_win = True
 
-                    # Создаем фиктивное значение для общей функции
                     dice_value = player_value if is_win else 0
                     self._send_game_result_with_image(
                         bot_roll.message_id,
@@ -826,20 +672,15 @@ class BettingGame:
                     )
 
         except Exception as e:
-            print(f"❌ Ошибка при создании игры в канале: {e}")
-            import traceback
-            traceback.print_exc()
+            pass
 
     def _process_double_dice_result(self, dice_message_id, dice1_value, dice2_value, user_id, nickname, amount, bet_type, bet_config, from_bot):
-        """Обрабатывает результат для двух кубиков (2 меньше / 2 больше)"""
         try:
             is_win = False
             
             if bet_type == 'куб_2меньше':
-                # Оба кубика должны быть меньше 4 (1, 2, или 3)
                 is_win = dice1_value < 4 and dice2_value < 4
             elif bet_type == 'куб_2больше':
-                # Оба кубика должны быть больше 3 (4, 5, или 6)
                 is_win = dice1_value > 3 and dice2_value > 3
             
             winnings = 0
@@ -847,15 +688,8 @@ class BettingGame:
                 winnings = amount * bet_config['multiplier']
                 if from_bot:
                     self.add_balance(user_id, winnings)
-                    print(f"🎉 Победа! Начислено {winnings} USDT пользователю {user_id}")
-
-                    # Начисляем реферальный бонус
                     if hasattr(self, 'referral_system') and self.referral_system:
                         referral_bonus = self.referral_system.process_referral_win(user_id, winnings)
-                        if referral_bonus > 0:
-                            print(f"📈 Начислено {referral_bonus:.2f} USDT рефереру за выигрыш реферала")
-            else:
-                print(f"😔 Проигрыш. Пользователь {user_id} потерял {amount} USDT")
 
             markup = self.get_bet_button_markup()
 
@@ -882,7 +716,6 @@ class BettingGame:
 """
                 image_url = LOSE_IMAGE_URL
 
-            print(f"📸 Отправляю изображение: {image_url}")
             try:
                 self.bot.send_photo(
                     CHANNEL_ID,
@@ -892,9 +725,7 @@ class BettingGame:
                     reply_to_message_id=dice_message_id,
                     reply_markup=markup
                 )
-                print(f"✅ Результат игры с изображением отправлен в канал")
             except Exception as e:
-                print(f"❌ Ошибка при отправке фото: {e}")
                 self.bot.send_message(
                     CHANNEL_ID,
                     result_text,
@@ -902,24 +733,19 @@ class BettingGame:
                     reply_to_message_id=dice_message_id,
                     reply_markup=markup
                 )
-                print(f"✅ Результат игры отправлен текстом в канал")
 
         except Exception as e:
-            print(f"❌ Ошибка при обработке результата двух кубиков: {e}")
+            pass
 
     def _send_game_result_with_image(self, dice_message_id, dice_value, user_id, nickname, amount, bet_type, bet_config, from_bot):
-        """Отправляет результат игры с изображением (общая функция для всех игр)"""
         try:
-            # Определяем выигрыш
             is_win = False
             winnings = 0
 
             if bet_type.startswith('куб_'):
-                # Для обычных кубиковых ставок (кроме специальных)
                 if 'special' not in bet_config:
                     winning_values = bet_config['values']
                     is_win = dice_value in winning_values
-                # Специальные ставки обрабатываются отдельно в _process_double_dice_result
             elif bet_type.startswith('баскет_'):
                 winning_values = bet_config['values']
                 is_win = dice_value in winning_values
@@ -933,22 +759,14 @@ class BettingGame:
                 if bet_type == 'боулинг_страйк':
                     is_win = dice_value == 6
                 else:
-                    # Для победы/поражения результат уже определен в _create_channel_game
                     is_win = dice_value > 0
 
             if is_win:
                 winnings = amount * bet_config['multiplier']
                 if from_bot:
                     self.add_balance(user_id, winnings)
-                    print(f"🎉 Победа! Начислено {winnings} USDT пользователю {user_id}")
-
-                    # Начисляем реферальный бонус
                     if hasattr(self, 'referral_system') and self.referral_system:
                         referral_bonus = self.referral_system.process_referral_win(user_id, winnings)
-                        if referral_bonus > 0:
-                            print(f"📈 Начислено {referral_bonus:.2f} USDT рефереру за выигрыш реферала")
-            else:
-                print(f"😔 Проигрыш. Пользователь {user_id} потерял {amount} USDT")
 
             markup = self.get_bet_button_markup()
 
@@ -975,7 +793,6 @@ class BettingGame:
 """
                 image_url = LOSE_IMAGE_URL
 
-            print(f"📸 Отправляю изображение: {image_url}")
             try:
                 self.bot.send_photo(
                     CHANNEL_ID,
@@ -985,9 +802,7 @@ class BettingGame:
                     reply_to_message_id=dice_message_id,
                     reply_markup=markup
                 )
-                print(f"✅ Результат игры с изображением отправлен в канал")
             except Exception as e:
-                print(f"❌ Ошибка при отправке фото: {e}")
                 self.bot.send_message(
                     CHANNEL_ID,
                     result_text,
@@ -995,12 +810,9 @@ class BettingGame:
                     reply_to_message_id=dice_message_id,
                     reply_markup=markup
                 )
-                print(f"✅ Результат игры отправлен текстом в канал")
 
         except Exception as e:
-            print(f"❌ Ошибка при отправке результата: {e}")
+            pass
 
     def set_referral_system(self, referral_system):
-        """Устанавливает ссылку на реферальную систему"""
         self.referral_system = referral_system
-        print("✅ Реферальная система подключена к играм")
