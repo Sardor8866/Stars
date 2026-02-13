@@ -415,7 +415,8 @@ def show_partners(message):
         message.from_user.username,
         message.from_user.first_name
     )
-    referral_system.show_menu_from_message(message)
+    # Используем правильный метод show_menu (он принимает и message, и call)
+    referral_system.show_menu(message)
 
 @bot.message_handler(func=lambda message: message.text == "🎮 Играть")
 def show_play_menu(message):
@@ -599,7 +600,8 @@ def handle_bet_selection(call):
         
         print(f"📞 Получен callback ставки: {call.data} от пользователя {call.from_user.id}")
         
-        game.handle_bet_selection(call)
+        # Используем правильный метод из games.py
+        game.select_bet_outcome(call)
         bot.answer_callback_query(call.id)
         
     except Exception as e:
@@ -616,6 +618,10 @@ def handle_text(message):
         message.from_user.username,
         message.from_user.first_name
     )
+    
+    # Проверяем, не является ли это вводом суммы ставки
+    if game.process_bet_amount(message):
+        return
     
     # Проверяем, не является ли это выводом реферальных средств
     if referral_system.process_withdraw(message):
