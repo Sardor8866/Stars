@@ -47,9 +47,15 @@ try:
     referral_system = ReferralSystem(bot, game)
     game.set_referral_system(referral_system)
     game.set_miniapp_url(MINIAPP_URL)  # Устанавливаем URL мини-приложения
+    
+    # Проверяем, что процессор очереди запущен
     print("✅ Модули игр и рефералов загружены")
+    print(f"🔄 Процессор очереди игр должен быть запущен автоматически")
+    
 except Exception as e:
     print(f"❌ Ошибка загрузки модулей: {e}")
+    import traceback
+    traceback.print_exc()
     import sys
     sys.exit(1)
 
@@ -224,21 +230,32 @@ def publish_game_to_channel(user_id, game_type, outcome, amount):
             nickname = f"User {user_id}"
         
         # Добавляем игру в очередь
-        game.add_game_to_queue(user_id, nickname, amount, game_type, outcome)
+        success = game.add_game_to_queue(user_id, nickname, amount, game_type, outcome)
         
-        # Отправляем подтверждение пользователю
-        bot.send_message(
-            user_id,
-            f"✅ <b>Ставка принята!</b>\n\n"
-            f"🎮 Игра: <code>{game_type}</code>\n"
-            f"🎯 Исход: <code>{outcome}</code>\n"
-            f"💰 Сумма: <code>{amount:.2f}$</code>\n\n"
-            f"Игра будет опубликована в канале в порядке очереди.",
-            parse_mode='HTML'
-        )
+        if success:
+            # Отправляем подтверждение пользователю
+            bot.send_message(
+                user_id,
+                f"✅ <b>Ставка принята!</b>\n\n"
+                f"🎮 Игра: <code>{game_type}</code>\n"
+                f"🎯 Исход: <code>{outcome}</code>\n"
+                f"💰 Сумма: <code>{amount:.2f}$</code>\n\n"
+                f"Игра будет опубликована в канале в порядке очереди.",
+                parse_mode='HTML'
+            )
+            print(f"✅ Игра добавлена в очередь для пользователя {user_id}")
+        else:
+            print(f"❌ Не удалось добавить игру в очередь для пользователя {user_id}")
+            bot.send_message(
+                user_id,
+                "❌ Ошибка при создании игры. Попробуйте позже.",
+                parse_mode='HTML'
+            )
         
     except Exception as e:
         print(f"❌ Ошибка при публикации игры: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ========== ВЕБХУКИ ==========
 
@@ -333,7 +350,8 @@ def health():
     return {
         'status': 'ok',
         'pending_payments': len(pending_payments),
-        'users': len(game.user_balances)
+        'users': len(game.user_balances),
+        'queue_size': game.game_queue.get_queue_size() if hasattr(game, 'game_queue') else 0
     }
 
 # ========== ОБРАБОТЧИКИ СООБЩЕНИЙ ==========
@@ -488,6 +506,7 @@ def admin_stats(message):
     total_users = len(game.user_balances)
     total_balance = sum(game.user_balances.values())
     ref_stats = referral_system.get_stats(ADMIN_CHAT_ID)
+    queue_size = game.game_queue.get_queue_size() if hasattr(game, 'game_queue') else 0
 
     stats_text = f"""
 <b>📊 Статистика бота</b>
@@ -495,6 +514,7 @@ def admin_stats(message):
 💰 Общий баланс: <b>{total_balance:.2f} USDT</b>
 📝 Известных username: <b>{len(username_to_id)}</b>
 ⏳ Ожидают оплаты: <b>{len(pending_payments)}</b>
+🎮 Очередь игр: <b>{queue_size}</b>
 
 <b>👥 Реферальная система:</b>
 ├ Приглашено: <b>{ref_stats['total_refs']} чел.</b>
@@ -502,6 +522,18 @@ def admin_stats(message):
 └ Выведено: <b>{ref_stats['withdrawn']:.2f} USDT</b>
     """
     bot.reply_to(message, stats_text, parse_mode='HTML')
+
+@bot.message_handler(commands=['test_channel'])
+def test_channel(message):
+    """Тестовая команда для проверки доступа к каналу"""
+    if message.from_user.id != ADMIN_CHAT_ID:
+        return
+    
+    try:
+        test_msg = bot.send_message(CHANNEL_ID, "🧪 Тестовое сообщение от бота")
+        bot.reply_to(message, f"✅ Бот может отправлять сообщения в канал! ID сообщения: {test_msg.message_id}")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка: {e}\n\nУбедитесь что бот добавлен в канал {CHANNEL_ID} как администратор")
 
 @bot.callback_query_handler(func=lambda call: call.data == "deposit")
 def handle_deposit(call):
@@ -638,7 +670,7 @@ def handle_text(message):
     
     # Проверяем, не является ли это выводом реферальных средств
     print(f"🔍 Проверяем вывод реферальных средств...")
-    if referral_system.process_withdraw(message):
+    if hasattr(referral_system, 'process_withdraw') and referral_system.process_withdraw(message):
         print(f"✅ Сообщение обработано как вывод реферальных средств")
         return
     
@@ -672,11 +704,22 @@ if __name__ == "__main__":
     print(f"👑 Админ ID: {ADMIN_CHAT_ID}")
     print(f"🌐 Webhook URL: {WEBHOOK_URL}")
     print(f"📱 MiniApp URL: {MINIAPP_URL}")
+    print(f"📢 Канал для игр: @l1ght_win")
+    
+    # Проверяем доступ к каналу
+    try:
+        test_msg = bot.send_message(CHANNEL_ID, "🚀 Бот запущен и готов к играм!")
+        print(f"✅ Бот может отправлять сообщения в канал, ID: {test_msg.message_id}")
+    except Exception as e:
+        print(f"⚠️ ВНИМАНИЕ: Бот НЕ может отправлять сообщения в канал {CHANNEL_ID}!")
+        print(f"⚠️ Ошибка: {e}")
+        print(f"⚠️ Добавьте бота в канал как администратора!")
     
     # Настраиваем вебхук
     if setup_webhook():
         # Запускаем Flask сервер
         port = int(os.environ.get('PORT', 5000))
+        print(f"🚀 Flask сервер запускается на порту {port}")
         app.run(host='0.0.0.0', port=port)
     else:
         print("❌ Не удалось настроить вебхук")
