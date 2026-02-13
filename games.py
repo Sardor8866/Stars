@@ -11,7 +11,7 @@ MIN_BET = 0.15
 CHANNEL_ID = "@l1ght_win"
 CHANNEL_LINK = "https://t.me/l1ght_win"
 
-# URL мини-приложения
+# URL мини-приложения (рабочий!)
 MINIAPP_URL = "https://eloquent-narwhal-62b8dc.netlify.app"
 
 # Ссылки на изображения для результатов
@@ -94,7 +94,7 @@ class BettingGame:
         self.pending_bets = {}
         self.game_queue = GameQueue()
         self.referral_system = None
-        self.miniapp_url = MINIAPP_URL
+        # URL мини-приложения теперь константа, не нужно устанавливать отдельно
         self.load_balances()
         self.start_queue_processor()
 
@@ -156,10 +156,10 @@ class BettingGame:
         """Возвращает markup с WebApp кнопкой для ставки"""
         markup = types.InlineKeyboardMarkup()
         
-        # Создаем WebApp кнопку
+        # Создаем WebApp кнопку с правильным URL
         webapp_button = types.InlineKeyboardButton(
             "💸 Сделать ставку",
-            web_app=types.WebAppInfo(url=self.miniapp_url)
+            web_app=types.WebAppInfo(url=MINIAPP_URL)
         )
         markup.add(webapp_button)
         
