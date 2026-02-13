@@ -420,7 +420,9 @@ class BettingGame:
                 'bet_config': bet_config,
                 'from_bot': True
             }
+            print(f"➕ Добавляем игру в очередь: user_id={user_id}, nickname={nickname}, amount={amount}, bet_type={bet_type}")
             self.game_queue.add_game(game_data)
+            print(f"📊 Размер очереди после добавления: {self.game_queue.get_queue_size()}")
             del self.pending_bets[user_id]
             return True
         except ValueError:
@@ -428,20 +430,28 @@ class BettingGame:
             return True
 
     def _process_game_queue(self):
+        print("🔄 Процессор очереди игр запущен")
         while True:
             game_data = self.game_queue.start_next_game()
             if game_data:
+                print(f"▶️ Обрабатываем игру из очереди: {game_data.get('nickname', 'Unknown')}")
                 try:
                     self._create_channel_game(game_data)
                 except Exception as e:
                     print(f"❌ Ошибка при обработке игры: {e}")
+                    import traceback
+                    traceback.print_exc()
                 finally:
                     self.game_queue.finish_game()
+                    print(f"✅ Игра завершена, очередь освобождена")
             time.sleep(0.5)
 
     def _create_channel_game(self, game_data):
         """Создает игру в канале"""
         try:
+            print(f"🎮 Начинаем создание игры в канале...")
+            print(f"📊 Данные игры: {game_data}")
+            
             user_id = game_data['user_id']
             nickname = game_data['nickname']
             amount = game_data['amount']
@@ -460,6 +470,8 @@ class BettingGame:
             else:
                 game_type = 'bowling'
 
+            print(f"🎲 Тип игры: {game_type}, Тип ставки: {bet_type}")
+            
             # Экранируем HTML-специальные символы в названии ставки
             bet_name = bet_config['name'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
