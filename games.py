@@ -73,17 +73,21 @@ class GameQueue:
     def add_game(self, game_data):
         with self.lock:
             self.queue.append(game_data)
+            print(f"➕ Игра добавлена в очередь. Размер очереди: {len(self.queue)}")
 
     def start_next_game(self):
         with self.lock:
             if self.active_game or not self.queue:
                 return None
             self.active_game = True
-            return self.queue.popleft()
+            game = self.queue.popleft()
+            print(f"▶️ Начинаем игру из очереди. Осталось в очереди: {len(self.queue)}")
+            return game
 
     def finish_game(self):
         with self.lock:
             self.active_game = False
+            print(f"✅ Игра завершена, очередь освобождена")
 
     def get_queue_size(self):
         with self.lock:
@@ -99,12 +103,79 @@ class BettingGame:
         self.referral_system = None  # Будет установлено из main.py
         self.miniapp_url = None  # Будет установлено из main.py
         self.load_balances()
-        threading.Thread(target=self._process_game_queue, daemon=True).start()
+        # Запускаем процессор очереди в отдельном потоке
+        self.start_queue_processor()
+        print("✅ BettingGame инициализирован, процессор очереди запущен")
+
+    def start_queue_processor(self):
+        """Запускает обработчик очереди игр в отдельном потоке"""
+        thread = threading.Thread(target=self._process_game_queue, daemon=True)
+        thread.start()
+        print("🔄 Поток обработки очереди игр запущен")
 
     def set_miniapp_url(self, url):
         """Устанавливает URL мини-приложения"""
         self.miniapp_url = url
         print(f"✅ URL мини-приложения установлен: {url}")
+
+    def add_game_to_queue(self, user_id, nickname, amount, game_type, outcome):
+        """Добавляет игру в очередь (для вызова из main.py)"""
+        # Находим bet_type по game_type и outcome
+        bet_type = self._find_bet_type(game_type, outcome)
+        if not bet_type:
+            print(f"❌ Не найден bet_type для game_type={game_type}, outcome={outcome}")
+            return False
+        
+        # Находим bet_config
+        if bet_type.startswith('куб_'):
+            bet_config = DICE_BET_TYPES[bet_type]
+        elif bet_type.startswith('баскет_'):
+            bet_config = BASKETBALL_BET_TYPES[bet_type]
+        elif bet_type.startswith('футбол_'):
+            bet_config = FOOTBALL_BET_TYPES[bet_type]
+        elif bet_type.startswith('дартс_'):
+            bet_config = DART_BET_TYPES[bet_type]
+        elif bet_type.startswith('боулинг_'):
+            bet_config = BOWLING_BET_TYPES[bet_type]
+        else:
+            print(f"❌ Неизвестный bet_type: {bet_type}")
+            return False
+        
+        game_data = {
+            'user_id': user_id,
+            'nickname': nickname,
+            'amount': amount,
+            'bet_type': bet_type,
+            'bet_config': bet_config,
+            'from_bot': True
+        }
+        
+        self.game_queue.add_game(game_data)
+        print(f"➕ Игра добавлена в очередь через add_game_to_queue: user_id={user_id}")
+        return True
+
+    def _find_bet_type(self, game_type, outcome):
+        """Находит bet_type по game_type и outcome"""
+        # Словарь соответствия
+        mapping = {
+            'dice': DICE_BET_TYPES,
+            'basketball': BASKETBALL_BET_TYPES,
+            'football': FOOTBALL_BET_TYPES,
+            'darts': DART_BET_TYPES,
+            'bowling': BOWLING_BET_TYPES
+        }
+        
+        game_dict = mapping.get(game_type, {})
+        for bet_type, config in game_dict.items():
+            if config['name'] == outcome or bet_type.endswith(outcome):
+                return bet_type
+        
+        # Если не нашли по точному соответствию, пробуем по частичному
+        for bet_type in game_dict.keys():
+            if outcome in bet_type or bet_type in outcome:
+                return bet_type
+        
+        return None
 
     def get_bet_button_markup(self):
         """Возвращает markup с кнопкой для ставки (WebApp если URL установлен, иначе обычная ссылка)"""
@@ -308,7 +379,8 @@ class BettingGame:
             reply_markup=markup
         )
 
-    def show_exact_numbers(self, call):
+    def show_exact_number_menu(self, call):
+        """Показывает меню выбора точного числа для кубика"""
         markup = types.InlineKeyboardMarkup(row_width=3)
         for i in range(1, 7):
             markup.add(types.InlineKeyboardButton(f"🎲 {i}", callback_data=f"bet_dice_куб_{i}"))
@@ -351,8 +423,9 @@ class BettingGame:
             markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data="game_bowling"))
 
         text = f"""
-
 <blockquote><b>📝Введите сумму ставки</b></blockquote>
+Ваш баланс: <code>{balance:.2f} USDT</code>
+Минимальная ставка: <code>{MIN_BET} USDT</code>
         """
         try:
             self.bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='HTML', reply_markup=markup)
@@ -444,27 +517,43 @@ class BettingGame:
             return True
 
     def _process_game_queue(self):
-        print("🔄 Процессор очереди игр запущен")
+        """Процессор очереди игр - работает в отдельном потоке"""
+        print("🔄 Процессор очереди игр запущен и работает")
         while True:
-            game_data = self.game_queue.start_next_game()
-            if game_data:
-                print(f"▶️ Обрабатываем игру из очереди: {game_data.get('nickname', 'Unknown')}")
-                try:
-                    self._create_channel_game(game_data)
-                except Exception as e:
-                    print(f"❌ Ошибка при обработке игры: {e}")
-                    import traceback
-                    traceback.print_exc()
-                finally:
-                    self.game_queue.finish_game()
-                    print(f"✅ Игра завершена, очередь освобождена")
-            time.sleep(0.5)
+            try:
+                game_data = self.game_queue.start_next_game()
+                if game_data:
+                    print(f"▶️ Обрабатываем игру из очереди: {game_data.get('nickname', 'Unknown')}")
+                    print(f"📊 Данные игры: {game_data}")
+                    try:
+                        self._create_channel_game(game_data)
+                    except Exception as e:
+                        print(f"❌ Ошибка при обработке игры: {e}")
+                        import traceback
+                        traceback.print_exc()
+                    finally:
+                        self.game_queue.finish_game()
+                        print(f"✅ Игра завершена, очередь освобождена")
+                time.sleep(1)  # Увеличил паузу до 1 секунды
+            except Exception as e:
+                print(f"❌ Критическая ошибка в процессоре очереди: {e}")
+                time.sleep(5)
 
     def _create_channel_game(self, game_data):
         """Создает игру в канале"""
         try:
-            print(f"🎮 Начинаем создание игры в канале...")
+            print(f"🎮 НАЧАЛО СОЗДАНИЯ ИГРЫ В КАНАЛЕ")
             print(f"📊 Данные игры: {game_data}")
+            print(f"📢 Канал: {CHANNEL_ID}")
+            
+            # Проверяем, может ли бот отправлять сообщения в канал
+            try:
+                test_message = self.bot.send_message(CHANNEL_ID, "🎮 Начинаем игру...")
+                print(f"✅ Бот может отправлять сообщения в канал")
+            except Exception as e:
+                print(f"❌ Бот НЕ может отправлять сообщения в канал: {e}")
+                print(f"⚠️ Убедитесь что бот добавлен в канал {CHANNEL_ID} как администратор")
+                return
             
             user_id = game_data['user_id']
             nickname = game_data['nickname']
@@ -505,7 +594,7 @@ class BettingGame:
                 parse_mode='HTML',
                 reply_markup=markup
             )
-            print(f"✅ Сообщение о ставке отправлено")
+            print(f"✅ Сообщение о ставке отправлено, ID: {bet_message.message_id}")
             time.sleep(1)
 
             if game_type == 'dice':
@@ -521,6 +610,7 @@ class BettingGame:
                         emoji="🎲",
                         reply_to_message_id=bet_message.message_id
                     )
+                    print(f"🎲 Первый кубик отправлен, ID: {dice1_message.message_id}")
                     time.sleep(2)
                     
                     # Бросаем второй кубик
@@ -529,6 +619,7 @@ class BettingGame:
                         emoji="🎲",
                         reply_to_message_id=dice1_message.message_id
                     )
+                    print(f"🎲 Второй кубик отправлен, ID: {dice2_message.message_id}")
                     time.sleep(3)
                     
                     dice1_value = dice1_message.dice.value
@@ -538,7 +629,7 @@ class BettingGame:
                     
                     # Для этих ставок используем специальную обработку
                     self._process_double_dice_result(
-                        dice1_message.message_id,
+                        dice2_message.message_id,
                         dice1_value,
                         dice2_value,
                         user_id,
@@ -557,6 +648,7 @@ class BettingGame:
                         reply_to_message_id=bet_message.message_id
                     )
                     dice_value = dice_message.dice.value
+                    print(f"🎲 Результат: {dice_value}")
                     time.sleep(3)
 
                     self._send_game_result_with_image(
@@ -578,6 +670,7 @@ class BettingGame:
                     reply_to_message_id=bet_message.message_id
                 )
                 dice_value = dice_message.dice.value
+                print(f"🏀 Результат: {dice_value}")
                 time.sleep(3)
 
                 self._send_game_result_with_image(
@@ -599,6 +692,7 @@ class BettingGame:
                     reply_to_message_id=bet_message.message_id
                 )
                 dice_value = dice_message.dice.value
+                print(f"⚽ Результат: {dice_value}")
                 time.sleep(3)
 
                 self._send_game_result_with_image(
@@ -620,6 +714,7 @@ class BettingGame:
                     reply_to_message_id=bet_message.message_id
                 )
                 dice_value = dice_message.dice.value
+                print(f"🎯 Результат: {dice_value}")
                 time.sleep(3)
 
                 self._send_game_result_with_image(
@@ -706,7 +801,7 @@ class BettingGame:
 
                         player_value = player_roll.dice.value
                         bot_value = bot_roll.dice.value
-                        print(f"🎳 Результат после переброса: Игрок = {player_value}, Бot = {bot_value}")
+                        print(f"🎳 Результат после переброса: Игрок = {player_value}, Бот = {bot_value}")
 
                     # Определяем результат
                     is_win = False
@@ -732,6 +827,8 @@ class BettingGame:
 
         except Exception as e:
             print(f"❌ Ошибка при создании игры в канале: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _process_double_dice_result(self, dice_message_id, dice1_value, dice2_value, user_id, nickname, amount, bet_type, bet_config, from_bot):
         """Обрабатывает результат для двух кубиков (2 меньше / 2 больше)"""
@@ -770,7 +867,7 @@ class BettingGame:
 
 🥳<b>Поздравляем!</b>
 
-<a href="https://t.me/your_bot">Как играть</a> | <a href="https://t.me/your_bot">Канал новостей</a>
+<a href="{CHANNEL_LINK}">Как играть</a> | <a href="{CHANNEL_LINK}">Канал новостей</a>
 """
                 image_url = WIN_IMAGE_URL
             else:
@@ -781,7 +878,7 @@ class BettingGame:
 
 🍀<b>Повезет в следующий раз!</b>
 
-<a href="https://t.me/your_bot">Как играть</a> | <a href="https://t.me/your_bot">Канал новостей</a>
+<a href="{CHANNEL_LINK}">Как играть</a> | <a href="{CHANNEL_LINK}">Канал новостей</a>
 """
                 image_url = LOSE_IMAGE_URL
 
@@ -863,7 +960,7 @@ class BettingGame:
 
 🥳<b>Поздравляем!</b>
 
-<a href="https://t.me/your_bot">Как играть</a> | <a href="https://t.me/your_bot">Канал новостей</a>
+<a href="{CHANNEL_LINK}">Как играть</a> | <a href="{CHANNEL_LINK}">Канал новостей</a>
 """
                 image_url = WIN_IMAGE_URL
             else:
@@ -874,7 +971,7 @@ class BettingGame:
 
 🍀<b>Повезет в следующий раз!</b>
 
-<a href="https://t.me/your_bot">Как играть</a> | <a href="https://t.me/your_bot">Канал новостей</a>
+<a href="{CHANNEL_LINK}">Как играть</a> | <a href="{CHANNEL_LINK}">Канал новостей</a>
 """
                 image_url = LOSE_IMAGE_URL
 
