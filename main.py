@@ -4,30 +4,39 @@ import threading
 import time
 import json
 import os
+from flask import Flask, request
+import requests
+from datetime import datetime, timedelta
+
+# ========== КОНФИГУРАЦИЯ ==========
+BOT_TOKEN = '8400110033:AAH9NyaOW4us1hhiLGVIr9EobgnsRaowWLo'
+ADMIN_CHAT_ID = 8118184388
+WEBHOOK_URL = "https://stars-prok.onrender.com"  # Замените на ваш URL Render
+MINIAPP_URL = "eloquent-narwhal-62b8dc.netlify.app"  # Замените на ваш URL Netlify
+CRYPTOBOT_TOKEN = "477733:AAzooy5vcnCpJuGgTZc1Rdfbu71bqmrRMgr"  # Замените на ваш токен CryptoBot
 
 # ========== ОТКЛЮЧЕНИЕ ВСЕХ ПРОКСИ ==========
-# Удаляем все переменные окружения прокси
 os.environ['NO_PROXY'] = '*'
 for proxy_var in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
     os.environ[proxy_var] = ''
 
-# Отключаем прокси для requests и telebot
-import requests
+import requests as req_lib
 from telebot import apihelper
 
-session = requests.Session()
-session.trust_env = False  # Игнорировать переменные окружения
+session = req_lib.Session()
+session.trust_env = False
 apihelper.session = session
 apihelper.proxy = None
 
-# Инициализация бота с увеличенными таймаутами
-bot = telebot.TeleBot(
-    '8400110033:AAH9NyaOW4us1hhiLGVIr9EobgnsRaowWLo',
-    skip_pending=True,
-    num_threads=5
-)
+# Инициализация бота
+bot = telebot.TeleBot(BOT_TOKEN, skip_pending=True, num_threads=5)
 
-ADMIN_CHAT_ID = 8118184388
+# Инициализация Flask для вебхуков
+app = Flask(__name__)
+
+# Словарь для отслеживания платежей
+# {invoice_id: {'user_id': int, 'game': str, 'outcome': str, 'amount': float, 'timestamp': datetime}}
+pending_payments = {}
 
 # Инициализация модулей
 try:
@@ -104,61 +113,234 @@ def load_user_mappings():
 # Загружаем сохраненные маппинги при запуске
 load_user_mappings()
 
-def handle_game_callbacks(call, game):
-    """Обработчик callback-кнопок игр"""
-    if call.data == "game_dice":
-        game.show_dice_menu(call)
-    elif call.data == "bet_dice_exact":
-        game.show_exact_numbers(call)
-    elif call.data.startswith("bet_dice_"):
-        bet_type = call.data.replace("bet_dice_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    elif call.data == "game_basketball":
-        game.show_basketball_menu(call)
-    elif call.data.startswith("bet_basketball_"):
-        bet_type = call.data.replace("bet_basketball_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    elif call.data == "game_football":
-        game.show_football_menu(call)
-    elif call.data.startswith("bet_football_"):
-        bet_type = call.data.replace("bet_football_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    elif call.data == "game_darts":
-        game.show_darts_menu(call)
-    elif call.data.startswith("bet_darts_"):
-        bet_type = call.data.replace("bet_darts_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
-    elif call.data == "game_bowling":
-        game.show_bowling_menu(call)
-    elif call.data.startswith("bet_bowling_"):
-        bet_type = call.data.replace("bet_bowling_", "")
-        if bet_type in BET_TYPES:
-            game.request_amount(call, bet_type)
+# ========== CRYPTOBOT API ФУНКЦИИ ==========
 
-def handle_referral_callbacks(call):
-    """Обработчик callback-кнопок реферальной системы"""
-    if call.data == "ref_menu":
-        referral_system.show_menu(call)
-    elif call.data == "ref_list":
-        referral_system.show_ref_list(call)
-    elif call.data == "ref_withdraw":
-        referral_system.show_withdraw(call)
-    elif call.data == "ref_share":
-        referral_system.show_share(call)
+def create_invoice(amount, description, user_id):
+    """Создает счет в CryptoBot"""
+    url = "https://pay.crypt.bot/api/createInvoice"
+    
+    payload = {
+        "amount": amount,
+        "currency_type": "crypto",
+        "asset": "USDT",
+        "description": description,
+        "paid_btn_name": "callback",
+        "paid_btn_url": f"{WEBHOOK_URL}/payment_success",
+        "payload": json.dumps({"user_id": user_id})
+    }
+    
+    headers = {
+        "Crypto-Pay-API-Token": CRYPTOBOT_TOKEN
+    }
+    
+    try:
+        response = req_lib.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        result = response.json()
+        
+        if result.get("ok"):
+            return result["result"]
+        else:
+            print(f"❌ Ошибка создания счета: {result}")
+            return None
+    except Exception as e:
+        print(f"❌ Ошибка при обращении к CryptoBot API: {e}")
+        return None
 
-def handle_bet_amount_input(message, game):
-    """Обработчик ввода суммы ставки"""
-    return game.process_bet_amount(message)
+def check_invoice_status(invoice_id):
+    """Проверяет статус счета"""
+    url = "https://pay.crypt.bot/api/getInvoices"
+    
+    headers = {
+        "Crypto-Pay-API-Token": CRYPTOBOT_TOKEN
+    }
+    
+    params = {
+        "invoice_ids": invoice_id
+    }
+    
+    try:
+        response = req_lib.get(url, params=params, headers=headers)
+        response.raise_for_status()
+        result = response.json()
+        
+        if result.get("ok") and result.get("result", {}).get("items"):
+            return result["result"]["items"][0]["status"]
+        return None
+    except Exception as e:
+        print(f"❌ Ошибка при проверке статуса: {e}")
+        return None
+
+# ========== ФУНКЦИИ ОБРАБОТКИ ПЛАТЕЖЕЙ ==========
+
+def monitor_payment(invoice_id, user_id, game_type, outcome, amount):
+    """Мониторит оплату в течение 3 минут"""
+    print(f"⏱ Начат мониторинг платежа {invoice_id} для пользователя {user_id}")
+    
+    start_time = datetime.now()
+    timeout = timedelta(minutes=3)
+    check_interval = 5  # секунд
+    
+    while datetime.now() - start_time < timeout:
+        status = check_invoice_status(invoice_id)
+        
+        if status == "paid":
+            print(f"✅ Платеж {invoice_id} оплачен!")
+            # Удаляем из списка ожидающих
+            if invoice_id in pending_payments:
+                del pending_payments[invoice_id]
+            
+            # Публикуем игру в канале
+            publish_game_to_channel(user_id, game_type, outcome, amount)
+            return True
+        
+        time.sleep(check_interval)
+    
+    # Время истекло
+    print(f"⏰ Время оплаты истекло для счета {invoice_id}")
+    if invoice_id in pending_payments:
+        del pending_payments[invoice_id]
+    
+    try:
+        bot.send_message(
+            user_id,
+            "⏰ Время оплаты истекло. Попробуйте снова.",
+            parse_mode='HTML'
+        )
+    except:
+        pass
+    
+    return False
+
+def publish_game_to_channel(user_id, game_type, outcome, amount):
+    """Публикует игру в канале после оплаты"""
+    try:
+        # Получаем информацию о пользователе
+        try:
+            user = bot.get_chat(user_id)
+            nickname = f"@{user.username}" if user.username else user.first_name
+        except:
+            nickname = f"User {user_id}"
+        
+        # Добавляем игру в очередь
+        game.add_game_to_queue(user_id, nickname, amount, game_type, outcome)
+        
+        # Отправляем подтверждение пользователю
+        bot.send_message(
+            user_id,
+            f"✅ <b>Ставка принята!</b>\n\n"
+            f"🎮 Игра: <code>{game_type}</code>\n"
+            f"🎯 Исход: <code>{outcome}</code>\n"
+            f"💰 Сумма: <code>{amount:.2f}$</code>\n\n"
+            f"Игра будет опубликована в канале в порядке очереди.",
+            parse_mode='HTML'
+        )
+        
+    except Exception as e:
+        print(f"❌ Ошибка при публикации игры: {e}")
+
+# ========== ВЕБХУКИ ==========
+
+@app.route(f'/{BOT_TOKEN}', methods=['POST'])
+def webhook():
+    """Обработчик вебхуков от Telegram"""
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    else:
+        return '', 403
+
+@app.route('/payment_callback', methods=['POST'])
+def payment_callback():
+    """Обработчик callback от CryptoBot при оплате"""
+    try:
+        data = request.json
+        print(f"📨 Получен payment callback: {data}")
+        
+        if data.get("update_type") == "invoice_paid":
+            invoice_id = str(data.get("payload", {}).get("invoice_id"))
+            
+            if invoice_id in pending_payments:
+                payment_data = pending_payments[invoice_id]
+                user_id = payment_data['user_id']
+                game_type = payment_data['game']
+                outcome = payment_data['outcome']
+                amount = payment_data['amount']
+                
+                # Публикуем игру
+                publish_game_to_channel(user_id, game_type, outcome, amount)
+                
+                # Удаляем из ожидающих
+                del pending_payments[invoice_id]
+        
+        return '', 200
+    except Exception as e:
+        print(f"❌ Ошибка в payment_callback: {e}")
+        return '', 500
+
+@app.route('/create_bet', methods=['POST'])
+def create_bet():
+    """API для создания ставки из мини-апп"""
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        game_type = data.get('game')
+        outcome = data.get('outcome')
+        amount = float(data.get('amount'))
+        
+        print(f"📝 Создание ставки: user={user_id}, game={game_type}, outcome={outcome}, amount={amount}")
+        
+        # Валидация
+        if not all([user_id, game_type, outcome, amount]):
+            return {'success': False, 'error': 'Неполные данные'}, 400
+        
+        if amount < MIN_BET:
+            return {'success': False, 'error': f'Минимальная ставка {MIN_BET}$'}, 400
+        
+        # Создаем счет в CryptoBot
+        description = f"{game_type} - {outcome} - {amount}$"
+        invoice = create_invoice(amount, description, user_id)
+        
+        if not invoice:
+            return {'success': False, 'error': 'Ошибка создания счета'}, 500
+        
+        invoice_id = str(invoice['invoice_id'])
+        pay_url = invoice['bot_invoice_url']
+        
+        # Сохраняем информацию о платеже
+        pending_payments[invoice_id] = {
+            'user_id': user_id,
+            'game': game_type,
+            'outcome': outcome,
+            'amount': amount,
+            'timestamp': datetime.now()
+        }
+        
+        # Запускаем мониторинг в отдельном потоке
+        threading.Thread(
+            target=monitor_payment,
+            args=(invoice_id, user_id, game_type, outcome, amount),
+            daemon=True
+        ).start()
+        
+        return {
+            'success': True,
+            'pay_url': pay_url,
+            'invoice_id': invoice_id,
+            'expires_in': 180  # 3 минуты
+        }, 200
+        
+    except Exception as e:
+        print(f"❌ Ошибка в create_bet: {e}")
+        return {'success': False, 'error': str(e)}, 500
+
+# ========== ОБРАБОТЧИКИ БОТА ==========
 
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     update_username_mapping(message.from_user.id, message.from_user.username)
-
-    # Сохраняем информацию о пользователе
     save_user_info(
         message.from_user.id,
         message.from_user.username,
@@ -170,9 +352,7 @@ def send_welcome(message):
         ref_code = message.text.split()[1]
         if ref_code.startswith('ref'):
             try:
-                referrer_id = int(ref_code[3:])  # Убираем 'ref' и получаем ID
-
-                # Регистрируем реферала с защитой
+                referrer_id = int(ref_code[3:])
                 referral_system.register_referral(
                     referee_id=message.from_user.id,
                     referrer_id=referrer_id,
@@ -198,8 +378,6 @@ def send_welcome(message):
 @bot.message_handler(func=lambda message: message.text == "👛Баланс")
 def show_profile(message):
     update_username_mapping(message.from_user.id, message.from_user.username)
-
-    # Сохраняем информацию о пользователе
     save_user_info(
         message.from_user.id,
         message.from_user.username,
@@ -230,31 +408,53 @@ def show_profile(message):
 
 @bot.message_handler(func=lambda message: message.text == "🤝 Партнеры")
 def show_partners(message):
-    """Показывает меню реферальной системы"""
     update_username_mapping(message.from_user.id, message.from_user.username)
-
-    # Сохраняем информацию о пользователе
     save_user_info(
         message.from_user.id,
         message.from_user.username,
         message.from_user.first_name
     )
-
-    referral_system.show_menu(message)
+    referral_system.show_menu_from_message(message)
 
 @bot.message_handler(func=lambda message: message.text == "🎮 Играть")
-def show_games(message):
+def show_play_menu(message):
+    """Показывает кнопку для открытия мини-апп"""
     update_username_mapping(message.from_user.id, message.from_user.username)
-
-    # Сохраняем информацию о пользователе
     save_user_info(
         message.from_user.id,
         message.from_user.username,
         message.from_user.first_name
     )
+    
+    # Создаем Web App кнопку
+    markup = types.InlineKeyboardMarkup()
+    webapp_button = types.InlineKeyboardButton(
+        text="🎮 Сделать ставку",
+        web_app=types.WebAppInfo(url=MINIAPP_URL)
+    )
+    markup.add(webapp_button)
+    
+    play_text = """
+<b>🎮 Игры LightWin</b>
 
-    game.show_games_menu(message)
+Нажмите кнопку ниже, чтобы выбрать игру и сделать ставку:
+    """
+    
+    try:
+        bot.send_message(
+            message.chat.id,
+            play_text,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+    except Exception as e:
+        print(f"❌ Ошибка отправки меню игр: {e}")
+        bot.send_message(
+            message.chat.id,
+            "❌ Ошибка при открытии меню игр. Попробуйте позже."
+        )
 
+# Админские команды
 @bot.message_handler(commands=['add'])
 def admin_add_balance(message):
     if message.from_user.id != ADMIN_CHAT_ID:
@@ -264,31 +464,17 @@ def admin_add_balance(message):
         if len(parts) < 3:
             bot.reply_to(message, "❌ Использование: /add username сумма")
             return
-
-        username = parts[1].replace('@', '').lower()
+        username = parts[1].replace('@', '')
         amount = float(parts[2])
-
         if username in username_to_id:
             user_id = username_to_id[username]
             game.add_balance(user_id, amount)
-            bot.reply_to(message, f"✅ Добавлено {amount} USDT пользователю @{username} (ID: {user_id})")
+            bot.reply_to(message, f"✅ Добавлено {amount} USDT пользователю @{username}")
             print(f"💰 Админ добавил {amount} USDT пользователю @{username} (ID: {user_id})")
         else:
-            # Пробуем найти по ID если username не найден
-            try:
-                user_id = int(username)
-                if user_id in game.user_balances or True:  # Можно добавлять новым пользователям
-                    game.add_balance(user_id, amount)
-                    bot.reply_to(message, f"✅ Добавлено {amount} USDT пользователю ID: {user_id}")
-                    print(f"💰 Админ добавил {amount} USDT пользователю ID: {user_id}")
-                else:
-                    bot.reply_to(message, f"❌ Пользователь @{username} не найден. Используйте /addid для добавления по ID")
-            except ValueError:
-                bot.reply_to(message, f"❌ Пользователь @{username} не найден. Используйте /addid для добавления по ID")
-
+            bot.reply_to(message, f"❌ Пользователь @{username} не найден")
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка: {e}")
-        print(f"❌ Ошибка в /add: {e}")
 
 @bot.message_handler(commands=['addid'])
 def admin_add_balance_by_id(message):
@@ -307,52 +493,6 @@ def admin_add_balance_by_id(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка: {e}")
 
-@bot.message_handler(commands=['find'])
-def admin_find_user(message):
-    """Поиск пользователя по username или ID"""
-    if message.from_user.id != ADMIN_CHAT_ID:
-        return
-
-    try:
-        parts = message.text.split()
-        if len(parts) < 2:
-            bot.reply_to(message, "❌ Использование: /find username или /find id")
-            return
-
-        search = parts[1]
-
-        # Пробуем найти по username
-        if search.startswith('@'):
-            search = search[1:]
-
-        # Ищем в username_to_id
-        if search in username_to_id:
-            user_id = username_to_id[search]
-            balance = game.get_balance(user_id)
-            bot.reply_to(message, f"✅ Найден: @{search}\nID: {user_id}\nБаланс: {balance:.2f} USDT")
-            return
-
-        # Пробуем найти по ID
-        try:
-            user_id = int(search)
-            balance = game.get_balance(user_id)
-            # Пробуем найти username
-            username = None
-            for uname, uid in username_to_id.items():
-                if uid == user_id:
-                    username = uname
-                    break
-
-            if username:
-                bot.reply_to(message, f"✅ Найден: ID: {user_id}\nUsername: @{username}\nБаланс: {balance:.2f} USDT")
-            else:
-                bot.reply_to(message, f"✅ Найден: ID: {user_id}\nUsername: не известен\nБаланс: {balance:.2f} USDT")
-        except ValueError:
-            bot.reply_to(message, f"❌ Пользователь @{search} не найден")
-
-    except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка: {e}")
-
 @bot.message_handler(commands=['stats'])
 def admin_stats(message):
     if message.from_user.id != ADMIN_CHAT_ID:
@@ -360,8 +500,6 @@ def admin_stats(message):
 
     total_users = len(game.user_balances)
     total_balance = sum(game.user_balances.values())
-
-    # Статистика рефералов
     ref_stats = referral_system.get_stats(ADMIN_CHAT_ID)
 
     stats_text = f"""
@@ -369,6 +507,7 @@ def admin_stats(message):
 👥 Всего пользователей: <b>{total_users}</b>
 💰 Общий баланс: <b>{total_balance:.2f} USDT</b>
 📝 Известных username: <b>{len(username_to_id)}</b>
+⏳ Ожидают оплаты: <b>{len(pending_payments)}</b>
 
 <b>👥 Реферальная система:</b>
 ├ Приглашено: <b>{ref_stats['total_refs']} чел.</b>
@@ -379,144 +518,85 @@ def admin_stats(message):
 
 @bot.callback_query_handler(func=lambda call: call.data == "deposit")
 def handle_deposit(call):
-    """Обработчик кнопки пополнения - показывает сообщение 'В разработке'"""
     update_username_mapping(call.from_user.id, call.from_user.username)
-
-    # Сохраняем информацию о пользователе
     save_user_info(
         call.from_user.id,
         call.from_user.username,
         call.from_user.first_name
     )
-
     bot.answer_callback_query(call.id, "📥 Пополнение в разработке", show_alert=True)
 
 @bot.callback_query_handler(func=lambda call: call.data == "withdraw")
 def handle_withdraw(call):
-    """Обработчик кнопки вывода - показывает сообщение 'В разработке'"""
     update_username_mapping(call.from_user.id, call.from_user.username)
-
-    # Сохраняем информацию о пользователе
     save_user_info(
         call.from_user.id,
         call.from_user.username,
         call.from_user.first_name
     )
-
     bot.answer_callback_query(call.id, "📤 Вывод в разработке", show_alert=True)
+
+@bot.message_handler(func=lambda message: message.text == "🤝 Партнеры")
+def show_partners(message):
+    referral_system.show_menu_from_message(message)
+
+@bot.callback_query_handler(func=lambda call: call.data in ["ref_menu", "ref_list", "ref_withdraw", "ref_share"])
+def handle_referral_callbacks(call):
+    if call.data == "ref_menu":
+        referral_system.show_menu(call)
+    elif call.data == "ref_list":
+        referral_system.show_ref_list(call)
+    elif call.data == "ref_withdraw":
+        referral_system.show_withdraw(call)
+    elif call.data == "ref_share":
+        referral_system.show_share(call)
 
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_text(message):
     update_username_mapping(message.from_user.id, message.from_user.username)
-
-    # Сохраняем информацию о пользователе
     save_user_info(
         message.from_user.id,
         message.from_user.username,
         message.from_user.first_name
     )
-
-    # Сначала проверяем, не является ли это выводом реферальных средств
+    
+    # Проверяем, не является ли это выводом реферальных средств
     if referral_system.process_withdraw(message):
         return
 
-    # Затем проверяем, не является ли это ставкой
-    if handle_bet_amount_input(message, game):
-        return
+# ========== ЗАПУСК ==========
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    update_username_mapping(call.from_user.id, call.from_user.username)
-
-    # Сохраняем информацию о пользователе
-    save_user_info(
-        call.from_user.id,
-        call.from_user.username,
-        call.from_user.first_name
-    )
-
-    if call.data == "menu":
-        send_welcome(call.message)
-
-    # Реферальные callback-ы
-    elif call.data in ["ref_menu", "ref_list", "ref_withdraw", "ref_share"]:
-        handle_referral_callbacks(call)
-
-    # Игровые callback-ы
-    else:
-        handle_game_callbacks(call, game)
+def setup_webhook():
+    """Настройка вебхука"""
+    webhook_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    
+    try:
+        # Удаляем старый вебхук
+        bot.remove_webhook()
+        time.sleep(1)
+        
+        # Устанавливаем новый
+        bot.set_webhook(
+            url=webhook_url,
+            allowed_updates=["message", "callback_query"]
+        )
+        
+        print(f"✅ Вебхук установлен: {webhook_url}")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка установки вебхука: {e}")
+        return False
 
 if __name__ == "__main__":
-    print("🤖 Бот запущен...")
+    print("🤖 Бот запускается в режиме вебхуков...")
     print(f"👑 Админ ID: {ADMIN_CHAT_ID}")
-    print("💡 Команды для администратора:")
-    print("/add username сумма - пополнить баланс по username")
-    print("/addid user_id сумма - пополнить баланс по ID")
-    print("/find username/id - найти пользователя")
-    print("/stats - статистика бота")
-    print("🎯 Доступные игры: 🎲 Кубик, 🏀 Баскетбол, ⚽ Футбол, 🎯 Дартс, 🎳 Боулинг")
-    print("👥 Реферальная система: 5% от выигрышей рефералов, минимальный вывод 1 USDT")
-
-    # Бесконечный цикл с перезапуском при ошибках
-    restart_count = 0
-    max_restarts = 10
+    print(f"🌐 Webhook URL: {WEBHOOK_URL}")
+    print(f"📱 MiniApp URL: {MINIAPP_URL}")
     
-    while restart_count < max_restarts:
-        try:
-            print(f"🔄 Запуск бота (попытка {restart_count + 1}/{max_restarts})...")
-            
-            # Принудительно удаляем вебхук (если был)
-            try:
-                bot.remove_webhook()
-                time.sleep(0.5)
-                print("✅ Вебхук удален (если был)")
-            except:
-                pass
-            
-            # Оптимизированный polling БЕЗ вебхуков
-            bot.polling(
-                none_stop=True,
-                timeout=60,
-                long_polling_timeout=60,
-                interval=5,
-                skip_pending=True,
-                allowed_updates=["message", "callback_query"]
-            )
-            
-        except KeyboardInterrupt:
-            print("\n🛑 Бот остановлен пользователем")
-            break
-        except Exception as e:
-            restart_count += 1
-            print(f"❌ Ошибка в работе бота: {type(e).__name__}: {e}")
-            
-            if "ConnectionError" in str(type(e).__name__):
-                print("⚠️ Проблема с интернет-соединением!")
-                print("📡 Проверьте:")
-                print("1. Доступность интернета на сервере")
-                print("2. Доступность api.telegram.org")
-                print("3. Блокировки в вашем регионе")
-                
-                # Быстрая проверка сети
-                try:
-                    import subprocess
-                    result = subprocess.run(['ping', '-c', '2', '8.8.8.8'], 
-                                          capture_output=True, text=True)
-                    if result.returncode == 0:
-                        print("✅ Интернет есть, проблема с Telegram")
-                    else:
-                        print("❌ Нет интернет-соединения")
-                except:
-                    pass
-            
-            print(f"⏳ Перезапуск через 5 секунд...")
-            
-            if restart_count >= max_restarts:
-                print("🚨 Достигнуто максимальное количество перезапусков")
-                print("⚠️ Проверьте:")
-                print("1. Токен бота: правильность и статус в @BotFather")
-                print("2. Сеть: ping api.telegram.org")
-                print("3. Регион: Telegram может быть заблокирован")
-                break
-                
-            time.sleep(5) вот мейн пй это было геймс пй который я скинул
+    # Настраиваем вебхук
+    if setup_webhook():
+        # Запускаем Flask сервер
+        port = int(os.environ.get('PORT', 5000))
+        app.run(host='0.0.0.0', port=port)
+    else:
+        print("❌ Не удалось настроить вебхук")
