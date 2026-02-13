@@ -40,7 +40,7 @@ pending_payments = {}
 
 # Инициализация модулей
 try:
-    from games import BettingGame, BET_TYPES, MIN_BET
+    from games import BettingGame, BET_TYPES, MIN_BET, CHANNEL_ID  # ВАЖНО: импортируем CHANNEL_ID
     from referrals import ReferralSystem
     
     game = BettingGame(bot)
@@ -51,6 +51,7 @@ try:
     # Проверяем, что процессор очереди запущен
     print("✅ Модули игр и рефералов загружены")
     print(f"🔄 Процессор очереди игр должен быть запущен автоматически")
+    print(f"📢 Канал для игр: {CHANNEL_ID}")
     
 except Exception as e:
     print(f"❌ Ошибка загрузки модулей: {e}")
