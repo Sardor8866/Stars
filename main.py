@@ -600,8 +600,17 @@ def handle_bet_selection(call):
         
         print(f"📞 Получен callback ставки: {call.data} от пользователя {call.from_user.id}")
         
-        # Используем правильный метод из games.py
-        game.select_bet_outcome(call)
+        # Парсим callback: bet_dice_куб_нечет -> куб_нечет
+        parts = call.data.split('_', 2)  # ['bet', 'dice', 'куб_нечет']
+        if len(parts) >= 3:
+            bet_type = parts[2]  # куб_нечет
+            game.request_amount(call, bet_type)
+        elif call.data == "bet_dice_exact":
+            # Для точного числа показываем меню выбора числа
+            game.show_exact_number_menu(call)
+        else:
+            print(f"⚠️ Неизвестный формат callback: {call.data}")
+            
         bot.answer_callback_query(call.id)
         
     except Exception as e:
